@@ -1,6 +1,6 @@
 # Release Notes
 
-_Generated on 2025-02-26 18:31:10_
+_Generated on 2025-02-26 18:36:02_
 
 Period: last-month
 
@@ -87,7 +87,7 @@ _No changes found._
 
 **Component:** [keboola.ex-franconnect](https://github.com/component-franconnect)  
 **Tag:** [0.0.3](https://github.com/keboola/component-franconnect/releases/tag/0.0.3)  
-**Previous Tag:** 0.0.2
+**Previous Tag:** 0.0.1
 
 
 

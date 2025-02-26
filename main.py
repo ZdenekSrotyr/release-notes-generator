@@ -229,9 +229,38 @@ class ReleaseNotesGenerator:
         logger.info(f"Comparing changes between {older_tag['name']} and {newer_tag['name']} in {repo.name}")
         
         try:
+            logger.debug(f"Using comparison: {older_tag['commit']} ... {newer_tag['commit']}")
             comparison = repo.compare(older_tag['commit'], newer_tag['commit'])
             logger.debug(f"Found {len(comparison.commits)} commits between tags")
             
+            # Additional logging to help diagnose the issue
+            if len(comparison.commits) == 0:
+                logger.warning(f"No commits found between {older_tag['name']} and {newer_tag['name']}. This may indicate an issue with tag ordering or GitHub API access.")
+                # Try direct approach to get commits
+                try:
+                    # Get all commits and filter between dates
+                    older_commit = repo.get_commit(older_tag['commit'])
+                    newer_commit = repo.get_commit(newer_tag['commit']) 
+                    older_date = older_commit.commit.author.date
+                    newer_date = newer_commit.commit.author.date
+                    
+                    logger.debug(f"Trying to find commits between dates: {older_date} and {newer_date}")
+                    
+                    # Ensure dates are in correct order
+                    if older_date > newer_date:
+                        logger.warning(f"Tag dates are in wrong order. Swapping comparison direction.")
+                        older_date, newer_date = newer_date, older_date
+                    
+                    # Get commits in date range
+                    commits_in_range = list(repo.get_commits(since=older_date, until=newer_date))
+                    logger.info(f"Found {len(commits_in_range)} commits by date range between {older_date} and {newer_date}")
+                    
+                    # Use these commits instead if found
+                    if len(commits_in_range) > 0:
+                        comparison.commits = commits_in_range
+                except Exception as e:
+                    logger.error(f"Failed to get commits by date: {e}")
+                    
             changes = []
             files_changed = []
             
@@ -275,13 +304,33 @@ class ReleaseNotesGenerator:
             
             # Get files changed
             logger.debug(f"Fetching changed files")
-            for file in comparison.files:
-                files_changed.append({
-                    'filename': file.filename,
-                    'status': file.status,
-                    'additions': file.additions,
-                    'deletions': file.deletions
-                })
+            try:
+                for file in comparison.files:
+                    files_changed.append({
+                        'filename': file.filename,
+                        'status': file.status,
+                        'additions': file.additions,
+                        'deletions': file.deletions
+                    })
+            except Exception as e:
+                logger.warning(f"Failed to get file changes: {e}. Using commit data instead.")
+                # If we can't get files from comparison, use data from commits
+                file_changes = set()
+                for commit in comparison.commits:
+                    try:
+                        commit_files = commit.files
+                        for file in commit_files:
+                            file_data = {
+                                'filename': file.filename,
+                                'status': file.status,
+                                'additions': file.additions,
+                                'deletions': file.deletions
+                            }
+                            file_changes.add(json.dumps(file_data))
+                    except:
+                        pass
+                
+                files_changed = [json.loads(f) for f in file_changes]
             
             logger.info(f"Comparison complete: {len(changes)} changes and {len(files_changed)} files changed")
             
@@ -383,45 +432,93 @@ class ReleaseNotesGenerator:
             component_name = self.get_component_name(repo)
             logger.info(f"Component name resolved to: {component_name}")
             
-            tags = self.get_tags_in_period(repo, start_date, end_date)
+            # Get all tags and sort them by date first to ensure proper chronological order
+            try:
+                logger.debug("Getting all tags from repository for proper chronological sorting")
+                all_repo_tags = []
+                for tag in repo.get_tags():
+                    try:
+                        commit = tag.commit
+                        commit_date = commit.commit.author.date
+                        
+                        # Make sure we're comparing timezone-aware dates consistently
+                        if commit_date.tzinfo is None:
+                            commit_date = commit_date.replace(tzinfo=datetime.timezone.utc)
+                        
+                        all_repo_tags.append({
+                            'name': tag.name,
+                            'date': commit_date,
+                            'commit': commit.sha,
+                            'message': commit.commit.message,
+                            'url': tag.commit.html_url
+                        })
+                    except Exception as e:
+                        logger.warning(f"Error processing tag {tag.name}: {e}")
+                
+                # Sort all tags chronologically (oldest first)
+                all_repo_tags = sorted(all_repo_tags, key=lambda x: x['date'])
+                logger.debug(f"Repository has {len(all_repo_tags)} tags in total, sorted chronologically")
+                
+                # Filter tags in specified period
+                tags = []
+                for tag in all_repo_tags:
+                    if start_date <= tag['date'] <= end_date:
+                        tags.append(tag)
+                
+                logger.info(f"Found {len(tags)} tags in {repo.name} within date range")
+            except Exception as e:
+                logger.error(f"Failed to process tags for {repo.name}: {e}")
+                continue
             
             # Skip if no tags in period
             if not tags:
                 logger.info(f"No tags found in date range for {repo.name}, skipping")
                 continue
                 
-            # Get the tag before the first tag in our period (for comparison)
-            logger.debug(f"Finding previous tag for comparison")
-            all_tags = list(repo.get_tags())
-            previous_tag_found = False
-            
-            for i, tag in enumerate(all_tags):
-                if tag.name == tags[0]['name'] and i < len(all_tags) - 1:
-                    previous_tag = {
-                        'name': all_tags[i+1].name,
-                        'commit': all_tags[i+1].commit.sha
-                    }
-                    logger.debug(f"Found previous tag: {previous_tag['name']}")
-                    previous_tag_found = True
-                    break
-                    
-            if not previous_tag_found:
-                # If no previous tag, use the first commit
-                logger.debug(f"No previous tag found, using initial commit")
-                previous_tag = {
-                    'name': 'initial',
-                    'commit': list(repo.get_commits())[-1].sha
-                }
-            
             # Process each tag
             logger.info(f"Processing {len(tags)} tags for {repo.name}")
             for i, tag in enumerate(tags):
                 logger.debug(f"Processing tag {i+1}/{len(tags)}: {tag['name']}")
                 
-                # Compare with previous tag or the one we found above
-                compare_with = tags[i-1] if i > 0 else previous_tag
+                # Find the previous tag in the chronological order
+                previous_tag = None
                 
-                change_data = self.get_changes_between_tags(repo, compare_with, tag)
+                if i > 0:
+                    # Use the previous tag in our period
+                    previous_tag = tags[i-1]
+                else:
+                    # Find the tag that immediately precedes the first tag in our period
+                    tag_index = all_repo_tags.index(tag)
+                    if tag_index > 0:
+                        previous_tag = all_repo_tags[tag_index - 1]
+                    else:
+                        # If this is the first tag ever, use the initial commit
+                        try:
+                            logger.debug(f"No previous tag found, using initial commit")
+                            initial_commit = list(repo.get_commits().reversed())[-1]
+                            previous_tag = {
+                                'name': 'initial',
+                                'commit': initial_commit.sha,
+                                'date': initial_commit.commit.author.date
+                            }
+                        except Exception as e:
+                            logger.warning(f"Failed to find initial commit: {e}")
+                            # Use tag's own commit but from 1 day before as a fallback
+                            previous_date = tag['date'] - datetime.timedelta(days=1)
+                            previous_tag = {
+                                'name': 'initial',
+                                'commit': tag['commit'],
+                                'date': previous_date
+                            }
+                
+                logger.debug(f"Previous tag for {tag['name']} is {previous_tag['name']}")
+                
+                # Ensure older_tag is chronologically before newer_tag
+                if previous_tag['date'] > tag['date']:
+                    logger.warning(f"Tag order issue: {previous_tag['name']} is newer than {tag['name']}. Swapping order for comparison.")
+                    change_data = self.get_changes_between_tags(repo, tag, previous_tag)
+                else:
+                    change_data = self.get_changes_between_tags(repo, previous_tag, tag)
                 
                 timeline.append({
                     'date': tag['date'],
@@ -433,7 +530,7 @@ class ReleaseNotesGenerator:
                     'changes': change_data['changes'],
                     'files_changed': change_data['files_changed'],
                     'ai_description': change_data['ai_description'],
-                    'previous_tag': compare_with['name']
+                    'previous_tag': previous_tag['name']
                 })
                 logger.debug(f"Added {tag['name']} to timeline with {len(change_data['changes'])} changes")
         

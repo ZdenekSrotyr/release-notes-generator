@@ -1,0 +1,37 @@
+# GitHub API Token - can be replaced with GITHUB_TOKEN environment variable
+# github_token: "ghp_your_token_here"
+
+# GitHub organization
+organization: "keboola"
+
+# Time period for release notes
+# Options: last-week, last-month, last-quarter, or specific period (e.g. 2023-01-01-to-2023-02-01)
+time_period: "last-month"
+
+# Repository search patterns
+repo_patterns:
+  - "component"
+
+# Explicitly listed repositories (optional)
+repos:
+  - "keboola-component-example"
+  - "keboola-component-other"
+
+# Template directory
+template_dir: "templates"
+
+# Output file
+output_file: "release-notes.md"
+
+# AI-powered description generation
+use_ai: false
+ai_provider: "openai"
+# ai_api_key: "your_openai_api_key"
+# AI_API_KEY environment variable can be used instead
+
+# Slack integration
+slack_enabled: false
+# slack_webhook_url: "https://hooks.slack.com/services/xxx/yyy/zzz"
+# SLACK_WEBHOOK_URL environment variable can be used instead
+# slack_channel: "releases"
+# slack_file_upload_token: "xoxb-your-slack-token" 

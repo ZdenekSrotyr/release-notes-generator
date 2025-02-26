@@ -1,0 +1,42 @@
+# Release Notes
+
+_Generated on {{ generated_at.strftime('%Y-%m-%d %H:%M:%S') }}_
+
+Period: {{ time_period }}
+
+{% if timeline %}
+## Summary of Changes
+
+{% for entry in timeline %}
+### {{ entry.date.strftime('%Y-%m-%d') }} - {{ entry.component_name }} {{ entry.tag_name }}
+
+**Component:** [{{ entry.component_name }}](https://github.com/{{ entry.repo_name }})  
+**Tag:** [{{ entry.tag_name }}]({{ entry.tag_url }})  
+**Previous Tag:** {{ entry.previous_tag }}
+
+{% if entry.ai_description %}
+#### AI Summary
+{{ entry.ai_description }}
+{% endif %}
+
+{% if entry.changes %}
+#### Changes:
+{% for change in entry.changes %}
+- {{ change.title }} {% if change.number %}([#{{ change.number }}]({{ change.url }})){% elif change.commit %}([{{ change.commit[:7] }}]({{ change.url }})){% endif %}
+{% endfor %}
+{% else %}
+_No changes found._
+{% endif %}
+
+{% if entry.files_changed %}
+#### Files Changed:
+- {{ entry.files_changed|length }} files modified
+- {{ entry.files_changed|selectattr('status', 'equalto', 'added')|list|length }} added
+- {{ entry.files_changed|selectattr('status', 'equalto', 'modified')|list|length }} modified
+- {{ entry.files_changed|selectattr('status', 'equalto', 'removed')|list|length }} removed
+{% endif %}
+
+{% endfor %}
+{% else %}
+_No release notes found for the given period._
+{% endif %} 

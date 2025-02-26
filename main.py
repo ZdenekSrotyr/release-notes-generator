@@ -35,7 +35,7 @@ class ReleaseNotesGenerator:
         
     def get_date_range(self):
         """Convert time period to actual dates."""
-        today = datetime.datetime.now()
+        today = datetime.datetime.now(datetime.timezone.utc)  # Use UTC timezone-aware datetime
         
         if self.time_period == 'last-week':
             start_date = today - datetime.timedelta(days=7)
@@ -48,6 +48,9 @@ class ReleaseNotesGenerator:
             start_str, end_str = self.time_period.split('-to-')
             start_date = datetime.datetime.strptime(start_str, '%Y-%m-%d')
             end_date = datetime.datetime.strptime(end_str, '%Y-%m-%d')
+            # Make them timezone-aware with UTC
+            start_date = start_date.replace(tzinfo=datetime.timezone.utc)
+            end_date = end_date.replace(tzinfo=datetime.timezone.utc)
             return start_date, end_date
         else:
             # Default to last month
@@ -101,6 +104,10 @@ class ReleaseNotesGenerator:
             # Get the commit date
             commit = tag.commit
             commit_date = commit.commit.author.date
+            
+            # Make sure we're comparing timezone-aware dates consistently
+            if commit_date.tzinfo is None:
+                commit_date = commit_date.replace(tzinfo=datetime.timezone.utc)
             
             if start_date <= commit_date <= end_date:
                 tags.append({
@@ -296,7 +303,7 @@ class ReleaseNotesGenerator:
         
         content = template.render(
             timeline=timeline,
-            generated_at=datetime.datetime.now(),
+            generated_at=datetime.datetime.now(datetime.timezone.utc),  # Use UTC timezone-aware datetime
             time_period=self.time_period
         )
         

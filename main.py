@@ -382,7 +382,7 @@ class ReleaseNotesGenerator:
                 return None
                 
             import openai
-            openai.api_key = self.ai_api_key
+            client = openai.OpenAI(api_key=self.ai_api_key)
             
             # Prepare context for the AI
             commit_messages = [change.get('title', '') for change in changes]
@@ -407,13 +407,16 @@ class ReleaseNotesGenerator:
             """
             
             logger.debug("Sending request to OpenAI API")
-            response = openai.Completion.create(
+            
+            # Using the new OpenAI API (1.0.0+)
+            response = client.completions.create(
                 model="gpt-3.5-turbo-instruct",
                 prompt=prompt,
                 max_tokens=300,
                 temperature=0.5
             )
             
+            # Changed from response.choices[0].text to the new API structure
             ai_description = response.choices[0].text.strip()
             logger.info(f"AI description generated successfully ({len(ai_description)} chars)")
             return ai_description

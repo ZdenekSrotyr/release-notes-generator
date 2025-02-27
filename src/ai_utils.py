@@ -2,17 +2,18 @@
 from openai import OpenAI
 from src.config import logger, OPENAI_MODEL, OPENAI_API_KEY
 
+
 def initialize_openai_client():
     """Initialize OpenAI client if API key is available."""
     if not OPENAI_API_KEY:
         logger.info("OpenAI API key not provided - AI summaries disabled")
         return None
-        
+
     try:
         # Just create the client without making any API calls yet
         client = OpenAI(api_key=OPENAI_API_KEY)
         logger.info("OpenAI client initialized - will try to generate AI summaries")
-        
+
         # Test the client with a minimal API call to check authentication
         try:
             # Simple API call to test authentication
@@ -30,11 +31,12 @@ def initialize_openai_client():
                 logger.error(f"Authentication error with OpenAI API: {auth_e}")
                 logger.info("AI summaries disabled due to authentication issues")
             return None
-            
+
     except Exception as e:
         logger.error(f"Error initializing OpenAI client: {e}")
         logger.info("AI summaries disabled due to client initialization error")
         return None
+
 
 def generate_ai_description(openai_client, repo_name, previous_tag, current_tag, changes):
     """Generate an AI description of the changes between tags."""
@@ -89,4 +91,4 @@ def generate_ai_description(openai_client, repo_name, previous_tag, current_tag,
             return None
         else:
             logger.error(f"Error generating AI description: {e}")
-        return None 
+        return None

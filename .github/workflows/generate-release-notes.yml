@@ -41,6 +41,16 @@ on:
         required: false
         default: false
         type: boolean
+      only_new_releases:
+        description: 'Only process and send new releases that have not been processed before'
+        required: false
+        default: true
+        type: boolean
+      release_notes_dir:
+        description: 'Directory to store individual release notes'
+        required: false
+        default: 'release_notes'
+        type: string
 #  schedule:
 #    # Run on the 1st of every month at 8:00 AM UTC
 #    - cron: '0 8 1 * *'
@@ -75,6 +85,8 @@ jobs:
             ${{ github.event.inputs.since_last_run == true && '--since-last-run' || '' }} \
             ${{ github.event.inputs.slack_notify == true && '--slack-enabled' || '' }} \
             ${{ github.event.inputs.use_ai == true && '--use-ai' || '' }} \
+            ${{ github.event.inputs.only_new_releases == true && '--only-new-releases' || '' }} \
+            --release-notes-dir "${{ github.event.inputs.release_notes_dir || 'release_notes' }}" \
             -v
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -86,5 +98,9 @@ jobs:
           git config --global user.name 'GitHub Actions'
           git config --global user.email 'github-actions@github.com'
           git add release-notes.md
+          
+          # Also add any new individual release notes
+          git add "${{ github.event.inputs.release_notes_dir || 'release_notes' }}"
+          
           git commit -m "Update release notes for ${{ github.event.inputs.time_period }}${{ github.event.inputs.single_repo != '' && format(' [repo: {0}]', github.event.inputs.single_repo) || '' }}"
           git push 

@@ -14,6 +14,8 @@ A tool for automatically generating chronological release notes for components a
 - Command line arguments for flexible configuration
 - Ability to generate from the last successful run
 - Customizable time period for generating release notes
+- Individual release notes for each component in a separate file
+- Option to process and notify only about new releases that weren't processed before
 
 ## Installation
 
@@ -54,24 +56,32 @@ python main.py --use-ai
 export SLACK_WEBHOOK_URL="https://hooks.slack.com/services/xxx/yyy/zzz"
 python main.py --slack-enabled
 
+# Only process and notify about new releases
+python main.py --only-new-releases --slack-enabled
+
+# Specify custom directory for individual release notes
+python main.py --release-notes-dir="releases/2023"
+
 # Full options example
-python main.py -o keboola -t last-month -r my-component --since-last-run --use-ai --slack-enabled -v
+python main.py -o keboola -t last-month -r my-component --since-last-run --use-ai --slack-enabled --only-new-releases -v
 ```
 
 ### All Command Line Arguments
 
 ```
--o, --organization     GitHub organization (default: keboola)
--r, --repo             Generate for a single repository
--p, --repo-patterns    Repository search patterns (comma separated, default: component)
---repos                Explicitly listed repositories (comma separated)
--t, --time-period      Time period (last-week, last-month, last-quarter, or YYYY-MM-DD-to-YYYY-MM-DD)
---since-last-run       Generate from the date of the last entry in the existing release notes file
---template-dir         Template directory (default: templates)
---output-file          Output file (default: release-notes.md)
---use-ai               Use AI to generate descriptions
---slack-enabled        Enable Slack notifications
--v, --verbose          Enable verbose logging
+-o, --organization      GitHub organization (default: keboola)
+-r, --repo              Generate for a single repository
+-p, --repo-patterns     Repository search patterns (comma separated, default: component)
+--repos                 Explicitly listed repositories (comma separated)
+-t, --time-period       Time period (last-week, last-month, last-quarter, or YYYY-MM-DD-to-YYYY-MM-DD)
+--since-last-run        Generate from the date of the last entry in the existing release notes file
+--template-dir          Template directory (default: templates)
+--output-file           Output file (default: release-notes.md)
+--release-notes-dir     Directory to store individual release notes (default: release_notes)
+--only-new-releases     Only process and send to Slack releases that haven't been saved before
+--use-ai                Use AI to generate descriptions
+--slack-enabled         Enable Slack notifications
+-v, --verbose           Enable verbose logging
 ```
 
 ### Environment Variables
@@ -138,36 +148,48 @@ Customize the output by editing the template in the `templates` directory. The m
 
 The output file will be structured chronologically, with newest changes at the top:
 
-```markdown
-# Release Notes
+## Individual Component Release Notes
 
-_Generated on 2023-08-31 15:30:45_
+The tool can generate separate release notes files for each component release:
 
-Period: last-month
+1. Each component release is saved as a separate file in the `release_notes` directory (or the directory specified with `--release-notes-dir`)
+2. Files are named in the format `YYYY-MM-DD_component-name_tag.md`
+3. This allows for better organization and tracking of releases by component
 
-## Summary of Changes
+This feature helps with:
+- Tracking which releases have already been processed
+- Creating a structured archive of all component releases
+- Simplifying the process of notifying about new releases
 
-### 2023-08-30 - keboola.ex-component 1.2.3
+## New Releases Notification
 
-**Component:** [keboola.ex-component](https://github.com/keboola/keboola-component-example)  
-**Tag:** [1.2.3](https://github.com/keboola/keboola-component-example/releases/tag/1.2.3)  
+The `--only-new-releases` flag enables a mode where:
 
-#### AI Summary
-This release focuses on performance improvements and bug fixes. The main changes include optimized file processing for large files and improved data download efficiency. No breaking changes were introduced.
+1. The tool checks if a release has already been processed (by looking for its file in the release notes directory)
+2. Only new releases that haven't been processed before are sent to Slack
+3. This prevents duplicate notifications and ensures team members only see fresh updates
 
-#### Changes:
-- Fix bug in large file processing ([#123](https://github.com/keboola/keboola-component-example/pull/123))
-- Improve performance of data downloads ([#124](https://github.com/keboola/keboola-component-example/pull/124))
+When this mode is enabled with Slack integration:
+- Only newly discovered releases trigger notifications
+- The Slack message is formatted to highlight what's new since the last run
+- Each component's changes are summarized in a readable format
 
-### 2023-08-28 - keboola.other-component 2.0.0
+Here's an example Slack message when using `--only-new-releases`:
 
-**Component:** [keboola.other-component](https://github.com/keboola/keboola-component-other)  
-**Tag:** [2.0.0](https://github.com/keboola/keboola-component-other/releases/tag/2.0.0)
+```
+*New Release Notes for last-month*
 
-#### AI Summary
-This is a major release that introduces API v2 support. It maintains backward compatibility with previous versions but adds significant new functionality. The API handling code has been completely refactored for better performance and maintainability.
+*keboola.component-name* 1.2.3 - 2023-09-15:
+_This release improves performance by optimizing the data processing pipeline and fixing several edge cases..._
+• Fix data processing for large files
+• Improve error handling
+• Update dependencies
+<https://github.com/keboola/component-name/releases/tag/1.2.3|View on GitHub>
 
-#### Changes:
-- Add support for new API v2 ([#45](https://github.com/keboola/keboola-component-other/pull/45))
-- Maintain backward compatibility with previous version ([#46](https://github.com/keboola/keboola-component-other/pull/46))
+*another.component* 2.0.0 - 2023-09-14:
+_Major version update with breaking changes to the configuration format..._
+• Add support for new API v2
+• Refactor configuration structure
+• Improve logging
+<https://github.com/keboola/another-component/releases/tag/2.0.0|View on GitHub>
 ``` 

@@ -8,6 +8,7 @@ import datetime
 import requests
 import logging
 import re
+import glob
 from pathlib import Path
 from github import Github
 from jinja2 import Environment, FileSystemLoader
@@ -57,6 +58,16 @@ class ReleaseNotesGenerator:
         self.template_dir = args.template_dir
         self.output_file = args.output_file
         logger.info(f"Output will be written to: {self.output_file}")
+        
+        # Directory for individual component release notes
+        self.release_notes_dir = args.release_notes_dir
+        self.only_new_releases = args.only_new_releases
+        logger.info(f"Individual release notes will be saved to: {self.release_notes_dir}")
+        if self.only_new_releases:
+            logger.info("Only processing new releases that haven't been saved before")
+        
+        # Ensure release notes directory exists
+        os.makedirs(self.release_notes_dir, exist_ok=True)
         
         # AI configuration
         self.use_ai = args.use_ai
@@ -437,6 +448,7 @@ class ReleaseNotesGenerator:
         
         # Timeline will be a list of events
         timeline = []
+        new_releases = []  # Track new releases for Slack notification
         
         for i, repo in enumerate(repos):
             logger.info(f"Processing repository {i+1}/{len(repos)}: {repo.name}")
@@ -483,6 +495,17 @@ class ReleaseNotesGenerator:
                 # Filter tags in specified period
                 tags = []
                 for tag in all_repo_tags:
+                    # Check if we should only process new releases
+                    date_str = tag['date'].strftime('%Y-%m-%d')
+                    component_name_normalized = component_name.replace('.', '-').replace(' ', '-').lower()
+                    file_name = f"{date_str}_{component_name_normalized}_{tag['name']}.md"
+                    file_path = os.path.join(self.release_notes_dir, file_name)
+                    
+                    # Skip if we're only processing new releases and this one exists
+                    if self.only_new_releases and os.path.exists(file_path):
+                        logger.debug(f"Skipping existing release: {component_name} {tag['name']} from {date_str}")
+                        continue
+                    
                     if start_date <= tag['date'] <= end_date:
                         tags.append(tag)
                         logger.debug(f"Tag {tag['name']} from {tag['date'].strftime('%Y-%m-%d %H:%M:%S')} is within date range")
@@ -581,7 +604,8 @@ class ReleaseNotesGenerator:
                     except Exception as e:
                         logger.error(f"Failed to get direct diff: {e}")
                 
-                timeline.append({
+                # Create entry for this release
+                entry = {
                     'date': tag['date'],
                     'type': 'release',
                     'repo_name': repo.name,
@@ -591,14 +615,56 @@ class ReleaseNotesGenerator:
                     'changes': change_data['changes'],
                     'ai_description': change_data['ai_description'],
                     'previous_tag': previous_tag['name']
-                })
+                }
+                
+                # Save individual release note
+                is_new = self.save_component_release_note(entry)
+                if is_new:
+                    new_releases.append(entry)
+                
+                # Add to timeline for main release notes
+                timeline.append(entry)
                 logger.debug(f"Added {tag['name']} to timeline with {len(change_data['changes'])} changes")
         
         # Sort timeline by date (newest first)
         logger.info(f"Sorting timeline entries (total: {len(timeline)})")
         timeline.sort(key=lambda x: x['date'], reverse=True)
         
+        # Save the list of new releases for Slack notification
+        self.new_releases = new_releases
+        
         return timeline
+    
+    def save_component_release_note(self, entry):
+        """Save a release note for a single component release."""
+        # Format: YYYY-MM-DD_component-name.md
+        date_str = entry['date'].strftime('%Y-%m-%d')
+        component_name = entry['component_name'].replace('.', '-').replace(' ', '-').lower()
+        file_name = f"{date_str}_{component_name}_{entry['tag_name']}.md"
+        file_path = os.path.join(self.release_notes_dir, file_name)
+        
+        # Check if this release note already exists
+        if os.path.exists(file_path):
+            logger.info(f"Release note for {component_name} {entry['tag_name']} already exists, skipping")
+            return False
+        
+        # Create the release note content
+        template_loader = FileSystemLoader(self.template_dir)
+        template_env = Environment(loader=template_loader)
+        template = template_env.get_template('component-release.md.j2')
+        
+        # Render the template
+        content = template.render(
+            entry=entry,
+            generated_at=datetime.datetime.now(datetime.timezone.utc)
+        )
+        
+        # Write the file
+        with open(file_path, 'w') as f:
+            f.write(content)
+        
+        logger.info(f"Created release note: {file_path}")
+        return True
     
     def generate_markdown(self):
         """Generate markdown content."""
@@ -635,62 +701,134 @@ class ReleaseNotesGenerator:
             logger.error(f"Error generating markdown content: {e}")
             return False
     
-    def send_to_slack(self, content):
+    def send_to_slack(self, content=None):
         """Send release notes to Slack webhook."""
         logger.info("Preparing to send release notes to Slack")
         
-        try:
-            # Format content for Slack
-            # Create a simple summary for Slack
-            logger.debug("Creating Slack message")
-            summary = f"*Release Notes for {self.time_period}*\n\n"
+        # If we're only sending new releases
+        if self.only_new_releases and hasattr(self, 'new_releases'):
+            if not self.new_releases:
+                logger.info("No new releases to send to Slack")
+                return
             
-            # Add a summary of components updated
-            components_updated = set()
-            for entry in self.generate_timeline():
-                components_updated.add(entry['component_name'])
+            logger.info(f"Sending {len(self.new_releases)} new releases to Slack")
             
-            summary += f"*Components updated:* {', '.join(sorted(components_updated))}\n\n"
-            summary += f"*Details:* See the attached file for complete release notes."
-            
-            # Prepare the payload
-            logger.debug("Preparing Slack payload")
-            slack_payload = {
-                "text": summary,
-                "attachments": [
-                    {
-                        "title": f"Release Notes - {self.time_period}",
-                        "text": "See the attached file for details.",
-                        "color": "#36C5F0"
-                    }
-                ]
-            }
-            
-            # Post to Slack
-            logger.info("Sending message to Slack webhook")
-            response = requests.post(
-                self.slack_webhook_url,
-                json=slack_payload
-            )
-            
-            # Upload the file
-            logger.debug("Reading file content for upload")
-            with open(self.output_file, 'r') as f:
-                file_content = f.read()
+            try:
+                # Create a list of links to component releases
+                components_updated = []
+                summary_text = ""
                 
-            files = {
-                'file': (os.path.basename(self.output_file), file_content, 'text/markdown')
-            }
-            
-            # Check if message was posted successfully
-            if response.status_code != 200:
-                logger.warning(f"Failed to send message to Slack: {response.text}")
-            else:
-                logger.info("Release notes sent to Slack successfully!")
+                for entry in self.new_releases:
+                    component = entry['component_name']
+                    tag = entry['tag_name']
+                    components_updated.append(f"*{component}* {tag}")
+                    
+                    # Add a summary for this component
+                    summary_text += f"*{component}* {tag} - {entry['date'].strftime('%Y-%m-%d')}:\n"
+                    
+                    # Add the AI description if available
+                    if entry['ai_description']:
+                        # Limit to first 150 chars
+                        desc = entry['ai_description'][:150]
+                        if len(entry['ai_description']) > 150:
+                            desc += "..."
+                        summary_text += f"_{desc}_\n"
+                    
+                    # Add a few changes
+                    if entry['changes']:
+                        for i, change in enumerate(entry['changes'][:3]):
+                            summary_text += f"• {change['title']}\n"
+                        if len(entry['changes']) > 3:
+                            summary_text += f"_...and {len(entry['changes']) - 3} more changes_\n"
+                    
+                    summary_text += f"<{entry['tag_url']}|View on GitHub>\n\n"
                 
-        except Exception as e:
-            logger.error(f"Error sending to Slack: {e}")
-        
+                # Format content for Slack
+                logger.debug("Creating Slack message")
+                title = f"*New Release Notes for {self.time_period}*\n\n"
+                
+                # Prepare the payload
+                logger.debug("Preparing Slack payload")
+                slack_payload = {
+                    "text": title + summary_text,
+                    "attachments": [
+                        {
+                            "title": f"New Releases: {', '.join(components_updated)}",
+                            "text": "See the message above for details",
+                            "color": "#36C5F0"
+                        }
+                    ]
+                }
+                
+                # Post to Slack
+                logger.info("Sending message to Slack webhook")
+                response = requests.post(
+                    self.slack_webhook_url,
+                    json=slack_payload
+                )
+                
+                # Check if message was posted successfully
+                if response.status_code != 200:
+                    logger.warning(f"Failed to send message to Slack: {response.text}")
+                else:
+                    logger.info("Release notes sent to Slack successfully!")
+                    
+            except Exception as e:
+                logger.error(f"Error sending to Slack: {e}")
+        else:
+            # Original behavior - send the complete file
+            try:
+                # Format content for Slack
+                # Create a simple summary for Slack
+                logger.debug("Creating Slack message")
+                summary = f"*Release Notes for {self.time_period}*\n\n"
+                
+                # Add a summary of components updated
+                components_updated = set()
+                for entry in self.generate_timeline():
+                    components_updated.add(entry['component_name'])
+                
+                summary += f"*Components updated:* {', '.join(sorted(components_updated))}\n\n"
+                summary += f"*Details:* See the attached file for complete release notes."
+                
+                # Prepare the payload
+                logger.debug("Preparing Slack payload")
+                slack_payload = {
+                    "text": summary,
+                    "attachments": [
+                        {
+                            "title": f"Release Notes - {self.time_period}",
+                            "text": "See the attached file for details.",
+                            "color": "#36C5F0"
+                        }
+                    ]
+                }
+                
+                # Post to Slack
+                logger.info("Sending message to Slack webhook")
+                response = requests.post(
+                    self.slack_webhook_url,
+                    json=slack_payload
+                )
+                
+                # Upload the file
+                logger.debug("Reading file content for upload")
+                with open(self.output_file, 'r') as f:
+                    file_content = f.read()
+                    
+                files = {
+                    'file': (os.path.basename(self.output_file), file_content, 'text/markdown')
+                }
+                
+                # Check if message was posted successfully
+                if response.status_code != 200:
+                    logger.warning(f"Failed to send message to Slack: {response.text}")
+                else:
+                    logger.info("Release notes sent to Slack successfully!")
+                    
+            except Exception as e:
+                logger.error(f"Error sending to Slack: {e}")
+
 def main():
     logger.info("Starting release notes generator")
     
@@ -711,6 +849,9 @@ def main():
     # Output settings
     parser.add_argument('--template-dir', default='templates', help='Template directory')
     parser.add_argument('--output-file', default='release-notes.md', help='Output file')
+    parser.add_argument('--release-notes-dir', default='release_notes', help='Directory to store individual release notes')
+    parser.add_argument('--only-new-releases', action='store_true', 
+                        help='Only process and send to Slack releases that haven\'t been saved before')
     
     # Feature flags
     parser.add_argument('--use-ai', action='store_true', help='Use AI to generate descriptions')

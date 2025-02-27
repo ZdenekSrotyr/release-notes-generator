@@ -10,7 +10,7 @@ Period: {{ time_period }}
 {% for entry in timeline %}
 ### {{ entry.date.strftime('%Y-%m-%d') }} - {{ entry.component_name }} {{ entry.tag_name }}
 
-**Component:** [{{ entry.component_name }}](https://github.com/{{ entry.repo_name }})  
+**Component:** [{{ entry.component_name }}]({{ entry.tag_url|replace('/releases/tag/' + entry.tag_name, '') }})  
 **Tag:** [{{ entry.tag_name }}]({{ entry.tag_url }})  
 **Previous Tag:** {{ entry.previous_tag }}
 
@@ -21,32 +21,18 @@ Period: {{ time_period }}
 
 {% if entry.changes %}
 #### Changes:
+{% set seen_titles = [] %}
 {% for change in entry.changes %}
-- {{ change.title }} {% if change.number %}([#{{ change.number }}]({{ change.url }})){% elif change.commit %}([{{ change.commit[:7] }}]({{ change.url }})){% endif %}
+{% if change.title not in seen_titles %}
+- {{ change.title }} {% if change.number %}([#{{ change.number }}]({{ change.url }})){% endif %}
+{% set _ = seen_titles.append(change.title) %}
+{% endif %}
 {% endfor %}
 {% else %}
 #### Changes:
 _No changes were detected between {{ entry.previous_tag }} and {{ entry.tag_name }}._
 
 You can view the comparison directly on GitHub: [Compare {{ entry.previous_tag }} → {{ entry.tag_name }}](https://github.com/{{ entry.repo_name }}/compare/{{ entry.previous_tag }}...{{ entry.tag_name }})
-{% endif %}
-
-{% if entry.files_changed %}
-#### Files Changed:
-- {{ entry.files_changed|length }} files modified
-- {{ entry.files_changed|selectattr('status', 'equalto', 'added')|list|length }} added
-- {{ entry.files_changed|selectattr('status', 'equalto', 'modified')|list|length }} modified
-- {{ entry.files_changed|selectattr('status', 'equalto', 'removed')|list|length }} removed
-
-{% if entry.files_changed|length <= 10 %}
-**Modified Files:**
-{% for file in entry.files_changed %}
-- {{ file.filename }} ({{ file.status }}, +{{ file.additions }}, -{{ file.deletions }})
-{% endfor %}
-{% endif %}
-{% else %}
-#### Files Changed:
-_No file changes were detected between {{ entry.previous_tag }} and {{ entry.tag_name }}._
 {% endif %}
 
 {% endfor %}

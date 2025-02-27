@@ -80,10 +80,10 @@ class ReleaseNotesGenerator:
             files = glob.glob(f"{RELEASE_NOTES_DIR}/*.md")
             
             if not files:
-                logger.info("No previous release notes found, using last day")
+                logger.info("No previous release notes found, using last 30 days")
                 today = datetime.datetime.now().strftime('%Y-%m-%d')
-                yesterday = (datetime.datetime.now() - datetime.timedelta(days=5)).strftime('%Y-%m-%d')
-                return f"{yesterday}-to-{today}"
+                thirty_days_ago = (datetime.datetime.now() - datetime.timedelta(days=30)).strftime('%Y-%m-%d')
+                return f"{thirty_days_ago}-to-{today}"
             
             # Get the latest file by timestamp in filename
             latest_file = max(files, key=os.path.getctime)
@@ -107,10 +107,10 @@ class ReleaseNotesGenerator:
             
         except Exception as e:
             logger.error(f"Error detecting time period from last run: {e}")
-            # Default to last day if there's an error
+            # Default to last 30 days if there's an error
             today = datetime.datetime.now().strftime('%Y-%m-%d')
-            yesterday = (datetime.datetime.now() - datetime.timedelta(days=1)).strftime('%Y-%m-%d')
-            return f"{yesterday}-to-{today}"
+            thirty_days_ago = (datetime.datetime.now() - datetime.timedelta(days=30)).strftime('%Y-%m-%d')
+            return f"{thirty_days_ago}-to-{today}"
         
     def get_date_range(self):
         """Convert time period to actual dates."""
@@ -123,11 +123,12 @@ class ReleaseNotesGenerator:
             end_date = datetime.datetime.strptime(end_str, '%Y-%m-%d')
             # Make them timezone-aware with UTC
             start_date = start_date.replace(tzinfo=datetime.timezone.utc)
-            end_date = end_date.replace(tzinfo=datetime.timezone.utc)
+            # Make end_date the end of the day (23:59:59)
+            end_date = end_date.replace(hour=23, minute=59, second=59, tzinfo=datetime.timezone.utc)
             return start_date, end_date
         else:
-            # Default to last day
-            start_date = today - datetime.timedelta(days=1)
+            # Default to last 30 days
+            start_date = today - datetime.timedelta(days=30)
             return start_date, today
         
     def get_repos(self):
@@ -175,38 +176,34 @@ class ReleaseNotesGenerator:
         tags = []
         
         try:
-            # Get commits in the date range first
-            commits_in_range = []
-            commits = repo.get_commits(since=start_date, until=end_date)
-            for commit in commits:
-                commits_in_range.append(commit.sha)
+            # Get a reasonable number of recent tags (100) instead of all tags
+            # This is still much faster than getting all tags
+            recent_tags = list(repo.get_tags())[:100]
+            logger.info(f"Retrieved {len(recent_tags)} recent tags from {repo.name}")
             
-            if not commits_in_range:
-                logger.info(f"No commits found in {repo.name} within date range")
-                return []
-            
-            # Only look at the first page of tags (30 by default in PyGithub)
-            # This is much faster than getting all tags
-            recent_tags = list(repo.get_tags())[:30]
-            
+            # Filter tags by date directly
             for tag in recent_tags:
-                # Check if tag's commit is in our date range
-                if tag.commit.sha in commits_in_range:
+                try:
                     commit_date = tag.commit.commit.author.date
                     
                     # Make sure we're comparing timezone-aware dates consistently
                     if commit_date.tzinfo is None:
                         commit_date = commit_date.replace(tzinfo=datetime.timezone.utc)
                     
-                    tags.append({
-                        'name': tag.name,
-                        'date': commit_date,
-                        'commit': tag.commit.sha,
-                        'message': tag.commit.commit.message,
-                        'url': tag.commit.html_url
-                    })
+                    # Check if date is in our range
+                    if start_date <= commit_date <= end_date:
+                        tags.append({
+                            'name': tag.name,
+                            'date': commit_date,
+                            'commit': tag.commit.sha,
+                            'message': tag.commit.commit.message,
+                            'url': tag.commit.html_url
+                        })
+                except Exception as tag_e:
+                    logger.warning(f"Error processing tag {tag.name}: {tag_e}")
+                    continue
             
-            logger.info(f"Found {len(tags)} tags in {repo.name} within date range")
+            logger.info(f"Found {len(tags)} tags in {repo.name} within date range {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
             return sorted(tags, key=lambda x: x['date'])
         except Exception as e:
             logger.error(f"Error retrieving tags for {repo.name}: {e}")

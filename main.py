@@ -142,6 +142,8 @@ class ReleaseNotesGenerator:
         """Get tags created in the specified period."""
         logger.info(f"Retrieving tags for {repo.name}")
         tags = []
+        if repo.name=='component-franconnect':
+            print('here')
 
         try:
             # Get a reasonable number of recent tags (100) instead of all tags
@@ -401,6 +403,11 @@ class ReleaseNotesGenerator:
 
     def save_component_release_note(self, entry):
         """Save a release note for a single component release."""
+        # Skip creation of release notes if there are no changes between tags
+        if not entry['changes']:
+            logger.info(f"No changes found between {entry['previous_tag']} and {entry['tag_name']} for {entry['component_name']}, skipping release note")
+            return False
+            
         # Format: YYYY-MM-DD-HH-MM-SS_tag_component-name.md
         timestamp = entry['date'].strftime('%Y-%m-%d-%H-%M-%S')
         component_name = entry['component_name'].replace('.', '-').replace(' ', '-').lower()

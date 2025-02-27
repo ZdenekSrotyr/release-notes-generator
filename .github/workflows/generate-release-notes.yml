@@ -34,8 +34,7 @@ jobs:
       
       - name: Generate release notes
         run: |
-          # Can run either main.py or src/main.py directly
-          cd src
+          # Run the main.py script from the root directory
           python main.py ${{ github.event.inputs.slack_notify == true && '--slack' || '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

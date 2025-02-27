@@ -406,21 +406,22 @@ class ReleaseNotesGenerator:
             3. Any breaking changes or important notes
             """
             
-            logger.debug("Sending request to OpenAI API")
-            
-            # Using the new OpenAI API (1.0.0+)
-            response = client.completions.create(
-                model="gpt-3.5-turbo-instruct",
-                prompt=prompt,
-                max_tokens=300,
-                temperature=0.5
-            )
-            
-            # Changed from response.choices[0].text to the new API structure
-            ai_description = response.choices[0].text.strip()
-            logger.info(f"AI description generated successfully ({len(ai_description)} chars)")
-            return ai_description
-            
+            try:
+                # Using the new OpenAI API (1.0.0+)
+                response = client.completions.create(
+                    model="gpt-3.5-turbo-instruct",
+                    prompt=prompt,
+                    max_tokens=300,
+                    temperature=0.5
+                )
+                
+                ai_description = response.choices[0].text.strip()
+                logger.info(f"AI description generated successfully ({len(ai_description)} chars)")
+                return ai_description
+            except Exception as api_error:
+                logger.error(f"Error calling OpenAI API: {api_error}")
+                return f"Error generating AI description: {str(api_error)[:100]}..."
+                
         except Exception as e:
             logger.error(f"Error generating AI description: {e}")
             return None

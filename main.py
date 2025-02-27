@@ -175,23 +175,34 @@ class ReleaseNotesGenerator:
         tags = []
         
         try:
-            all_tags = list(repo.get_tags())
+            # Get commits in the date range first
+            commits_in_range = []
+            commits = repo.get_commits(since=start_date, until=end_date)
+            for commit in commits:
+                commits_in_range.append(commit.sha)
             
-            for tag in all_tags:
-                # Get the commit date
-                commit = tag.commit
-                commit_date = commit.commit.author.date
-                
-                # Make sure we're comparing timezone-aware dates consistently
-                if commit_date.tzinfo is None:
-                    commit_date = commit_date.replace(tzinfo=datetime.timezone.utc)
-                
-                if start_date <= commit_date <= end_date:
+            if not commits_in_range:
+                logger.info(f"No commits found in {repo.name} within date range")
+                return []
+            
+            # Only look at the first page of tags (30 by default in PyGithub)
+            # This is much faster than getting all tags
+            recent_tags = list(repo.get_tags())[:30]
+            
+            for tag in recent_tags:
+                # Check if tag's commit is in our date range
+                if tag.commit.sha in commits_in_range:
+                    commit_date = tag.commit.commit.author.date
+                    
+                    # Make sure we're comparing timezone-aware dates consistently
+                    if commit_date.tzinfo is None:
+                        commit_date = commit_date.replace(tzinfo=datetime.timezone.utc)
+                    
                     tags.append({
                         'name': tag.name,
                         'date': commit_date,
-                        'commit': commit.sha,
-                        'message': commit.commit.message,
+                        'commit': tag.commit.sha,
+                        'message': tag.commit.commit.message,
                         'url': tag.commit.html_url
                     })
             
@@ -200,7 +211,7 @@ class ReleaseNotesGenerator:
         except Exception as e:
             logger.error(f"Error retrieving tags for {repo.name}: {e}")
             return []
-        
+    
     def get_changes_between_tags(self, repo, older_tag, newer_tag):
         """Get changes between two tags."""
         logger.info(f"Comparing {older_tag['name']} and {newer_tag['name']} in {repo.name}")
@@ -277,97 +288,91 @@ class ReleaseNotesGenerator:
         for repo in repos:
             component_name = self.get_component_name(repo)
             
-            # Get all tags and sort them by date
-            try:
-                all_repo_tags = []
-                all_tags_api = list(repo.get_tags())
-                
-                for tag in all_tags_api:
-                    try:
-                        commit = tag.commit
-                        commit_date = commit.commit.author.date
-                        
-                        # Make sure we're comparing timezone-aware dates consistently
-                        if commit_date.tzinfo is None:
-                            commit_date = commit_date.replace(tzinfo=datetime.timezone.utc)
-                        
-                        all_repo_tags.append({
-                            'name': tag.name,
-                            'date': commit_date,
-                            'commit': commit.sha,
-                            'message': commit.commit.message,
-                            'url': tag.commit.html_url
-                        })
-                    except Exception:
-                        pass
-                
-                # Sort all tags chronologically (oldest first)
-                all_repo_tags = sorted(all_repo_tags, key=lambda x: x['date'])
-                
-                # Filter tags in specified period
-                tags = []
-                for tag in all_repo_tags:
-                    # Check if we should only process new releases
-                    timestamp = tag['date'].strftime('%Y-%m-%d-%H-%M-%S')
-                    component_name_normalized = component_name.replace('.', '-').replace(' ', '-').lower()
-                    file_name = f"{timestamp}_{tag['name']}_{component_name_normalized}.md"
-                    file_path = os.path.join(RELEASE_NOTES_DIR, file_name)
-                    
-                    # Skip if file already exists
-                    if os.path.exists(file_path):
-                        continue
-                    
-                    if start_date <= tag['date'] <= end_date:
-                        tags.append(tag)
-                
-                logger.info(f"Found {len(tags)} new tags in {repo.name} within date range")
-            except Exception:
-                continue
+            # Get tags within date range - optimized method
+            tags = self.get_tags_in_period(repo, start_date, end_date)
             
             # Skip if no tags in period
             if not tags:
                 continue
+            
+            # Check which tags have already been processed
+            tags_to_process = []
+            for tag in tags:
+                # Check if we've already processed this release
+                timestamp = tag['date'].strftime('%Y-%m-%d-%H-%M-%S')
+                component_name_normalized = component_name.replace('.', '-').replace(' ', '-').lower()
+                file_name = f"{timestamp}_{tag['name']}_{component_name_normalized}.md"
+                file_path = os.path.join(RELEASE_NOTES_DIR, file_name)
                 
-            # Process each tag
-            for i, tag in enumerate(tags):
-                # Find the previous tag in the chronological order
-                previous_tag = None
+                # Skip if file already exists
+                if os.path.exists(file_path):
+                    continue
                 
-                if i > 0:
-                    # Use the previous tag in our period
-                    previous_tag = tags[i-1]
-                else:
-                    # Find the tag that immediately precedes the first tag in our period
-                    tag_index = all_repo_tags.index(tag)
-                    if tag_index > 0:
-                        previous_tag = all_repo_tags[tag_index - 1]
-                    else:
-                        # If this is the first tag ever, use the initial commit
-                        try:
-                            initial_commit = list(repo.get_commits().reversed())[-1]
+                tags_to_process.append(tag)
+            
+            logger.info(f"Found {len(tags_to_process)} new tags to process in {repo.name}")
+            
+            # Process each new tag
+            for tag in tags_to_process:
+                # Find the previous tag - we'll use tag date to find chronologically previous tag
+                try:
+                    # Get just the one tag before our current one by date
+                    all_tags = list(repo.get_tags())[:50]  # Limit to 50 recent tags for efficiency
+                    sorted_tags = sorted(all_tags, key=lambda t: t.commit.commit.author.date)
+                    
+                    tag_date = tag['date']
+                    previous_tag = None
+                    
+                    for t in sorted_tags:
+                        t_date = t.commit.commit.author.date
+                        if t_date.tzinfo is None:
+                            t_date = t_date.replace(tzinfo=datetime.timezone.utc)
+                        
+                        if t_date < tag_date and t.name != tag['name']:
                             previous_tag = {
-                                'name': 'initial',
-                                'commit': initial_commit.sha,
-                                'date': initial_commit.commit.author.date,
-                                'message': initial_commit.commit.message,
-                                'url': initial_commit.html_url
+                                'name': t.name,
+                                'commit': t.commit.sha,
+                                'date': t_date,
+                                'message': t.commit.commit.message,
+                                'url': t.commit.html_url
                             }
-                        except Exception:
-                            # Use tag's own commit but from 1 day before as a fallback
-                            previous_date = tag['date'] - datetime.timedelta(days=1)
-                            previous_tag = {
-                                'name': 'initial',
-                                'commit': tag['commit'],
-                                'date': previous_date,
-                                'message': 'Initial state',
-                                'url': tag['url']
-                            }
+                            break
+                    
+                    # If no previous tag found, use the initial commit
+                    if not previous_tag:
+                        initial_commit = list(repo.get_commits().reversed())[-1]
+                        previous_tag = {
+                            'name': 'initial',
+                            'commit': initial_commit.sha,
+                            'date': initial_commit.commit.author.date,
+                            'message': initial_commit.commit.message,
+                            'url': initial_commit.html_url
+                        }
+                except Exception as e:
+                    logger.error(f"Error finding previous tag: {e}")
+                    # Use first commit as fallback
+                    try:
+                        initial_commit = list(repo.get_commits().reversed())[-1]
+                        previous_tag = {
+                            'name': 'initial',
+                            'commit': initial_commit.sha,
+                            'date': initial_commit.commit.author.date,
+                            'message': initial_commit.commit.message,
+                            'url': initial_commit.html_url
+                        }
+                    except Exception:
+                        # Last resort fallback
+                        previous_date = tag['date'] - datetime.timedelta(days=1)
+                        previous_tag = {
+                            'name': 'initial',
+                            'commit': tag['commit'],
+                            'date': previous_date,
+                            'message': 'Initial state',
+                            'url': tag['url']
+                        }
                 
-                # Ensure older_tag is chronologically before newer_tag
-                if previous_tag['date'] > tag['date']:
-                    change_data = self.get_changes_between_tags(repo, tag, previous_tag)
-                else:
-                    change_data = self.get_changes_between_tags(repo, previous_tag, tag)
+                # Get changes between tags
+                change_data = self.get_changes_between_tags(repo, previous_tag, tag)
                 
                 # Create entry for this release
                 entry = {

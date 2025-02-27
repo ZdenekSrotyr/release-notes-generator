@@ -33,7 +33,8 @@ This tool automatically scans GitHub repositories, looks for new tags, and creat
 ✅ Separate release notes files for each component release in the `release_notes` directory  
 ✅ Automatic detection of the last generated release  
 ✅ **AI summary of changes using OpenAI API** (optional)  
-✅ **Optimized tag search** for performance with large repositories
+✅ **Optimized tag search** for performance with large repositories  
+✅ **Extended timeframe** - searches for releases within the last 30 days by default
 
 ## Installation
 
@@ -54,7 +55,7 @@ pip install -r requirements.txt
 # Set GitHub token (required)
 export GITHUB_TOKEN="ghp_your_token_here"
 
-# Basic usage - generates release notes from the previous day
+# Basic usage - generates release notes from the last 30 days
 python main.py
 ```
 
@@ -158,20 +159,20 @@ The `--since-last-run` parameter automatically detects the date of the last file
 The tool implements several optimizations to speed up tag searching, especially for repositories with many tags:
 
 1. **Efficient API Usage**:
-   - Retrieves only commits within the target date range first
-   - Only checks tags whose commits fall within the target period
-   - Limits tag fetching to recent tags (30 by default)
+   - Directly searches most recent 100 tags without the need to fetch all commits first
+   - Sets time window to 30 days by default to capture more releases
+   - Ensures end dates include the full day (23:59:59) to catch all changes
 
 2. **Smart Tag Filtering**:
-   - Uses SHA matching to connect tags with relevant commits
-   - Avoids retrieving all tags when only recent ones are needed
-   - Reduces unnecessary API calls when searching for previous tags
+   - Applies date filters directly to tags for more accurate results
+   - Uses more robust error handling for individual tag processing
+   - Provides detailed date range information in logs
 
 3. **Fallback Mechanisms**:
-   - Handles edge cases gracefully with intelligent fallbacks
+   - Handles problematic tags gracefully without failing the entire process
    - Provides detailed logging for troubleshooting
 
-These optimizations significantly reduce processing time, especially for organizations with many repositories or repositories with extensive tag histories.
+These optimizations significantly reduce processing time and improve reliability, especially for organizations with many repositories or repositories with extensive tag histories.
 
 ## Customizing Output
 

@@ -34,7 +34,8 @@ jobs:
       
       - name: Generate release notes
         run: |
-          python main.py \
+          # Run directly as a module to avoid import issues
+          PYTHONPATH=$PYTHONPATH:$(pwd) python -m main \
             ${{ github.event.inputs.slack_notify == true && '--slack' || '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

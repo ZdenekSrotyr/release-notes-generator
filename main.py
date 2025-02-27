@@ -82,7 +82,7 @@ class ReleaseNotesGenerator:
             if not files:
                 logger.info("No previous release notes found, using last day")
                 today = datetime.datetime.now().strftime('%Y-%m-%d')
-                yesterday = (datetime.datetime.now() - datetime.timedelta(days=1)).strftime('%Y-%m-%d')
+                yesterday = (datetime.datetime.now() - datetime.timedelta(days=5)).strftime('%Y-%m-%d')
                 return f"{yesterday}-to-{today}"
             
             # Get the latest file by timestamp in filename

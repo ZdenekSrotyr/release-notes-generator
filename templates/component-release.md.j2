@@ -21,7 +21,7 @@ _Released on {{ entry.date.strftime('%Y-%m-%d') }}_
 {% endif %}
 {% endfor %}
 {% else %}
-## Changes:
+## Changes (commits):
 _No changes were detected between {{ entry.previous_tag }} and {{ entry.tag_name }}._
 
 [Compare on GitHub](https://github.com/{{ entry.repo_name }}/compare/{{ entry.previous_tag }}...{{ entry.tag_name }})

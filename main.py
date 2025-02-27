@@ -12,6 +12,7 @@ import glob
 from pathlib import Path
 from github import Github
 from jinja2 import Environment, FileSystemLoader
+from openai import OpenAI
 
 # Constants
 GITHUB_ORGANIZATION = "keboola"
@@ -42,6 +43,15 @@ class ReleaseNotesGenerator:
         
         self.github = Github(self.github_token)
         self.organization = GITHUB_ORGANIZATION
+        
+        # OpenAI configuration
+        self.openai_api_key = os.environ.get('OPENAI_API_KEY')
+        self.openai_client = None
+        if args.ai_summary and self.openai_api_key:
+            self.openai_client = OpenAI(api_key=self.openai_api_key)
+            logger.info("OpenAI API initialized")
+        elif args.ai_summary and not self.openai_api_key:
+            logger.warning("AI summaries requested but no OPENAI_API_KEY provided - AI descriptions will be disabled")
         
         # Time period configuration - only since last run or last day
         if args.since_last_run:
@@ -235,9 +245,17 @@ class ReleaseNotesGenerator:
                         'url': commit.html_url
                     })
             
+            # Generate AI description for the changes
+            ai_description = self.generate_ai_description(
+                repo.name, 
+                older_tag['name'], 
+                newer_tag['name'], 
+                changes
+            )
+            
             return {
                 'changes': changes,
-                'ai_description': None  # Removed AI description for simplicity
+                'ai_description': ai_description
             }
         except Exception as e:
             logger.error(f"Error comparing tags in {repo.name}: {e}")
@@ -360,7 +378,7 @@ class ReleaseNotesGenerator:
                     'tag_name': tag['name'],
                     'tag_url': f"https://github.com/{repo.full_name}/releases/tag/{tag['name']}",
                     'changes': change_data['changes'],
-                    'ai_description': None,  # No AI description
+                    'ai_description': change_data['ai_description'],
                     'previous_tag': previous_tag['name']
                 }
                 
@@ -485,6 +503,48 @@ class ReleaseNotesGenerator:
         except Exception as e:
             logger.error(f"Error sending to Slack: {e}")
 
+    def generate_ai_description(self, repo_name, previous_tag, current_tag, changes):
+        """Generate an AI description of the changes between tags."""
+        if not self.openai_client:
+            return None
+            
+        try:
+            # Format the changes as a readable list
+            changes_list = ""
+            for change in changes:
+                if 'title' in change:
+                    changes_list += f"- {change['title']}\n"
+            
+            # Create the prompt
+            prompt = f"""
+            Summarize the following changes in the {repo_name} repository between tags {previous_tag} and {current_tag}:
+            
+            {changes_list}
+            
+            Provide a concise technical summary focusing on the most significant changes.
+            Focus on what was changed, added, fixed, or improved. Keep it under 150 words.
+            """
+            
+            # Make the API call
+            response = self.openai_client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a technical writer summarizing software changes."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=300,
+                temperature=0.5
+            )
+            
+            # Extract and return the AI description
+            ai_description = response.choices[0].message.content.strip()
+            logger.info(f"Generated AI description for {repo_name} {current_tag}")
+            return ai_description
+            
+        except Exception as e:
+            logger.error(f"Error generating AI description: {e}")
+            return None
+
 def main():
     logger.info("Starting release notes generator")
     
@@ -494,6 +554,7 @@ def main():
     parser.add_argument('--since-last-run', action='store_true', 
                         help='Generate from the date of the last release note file')
     parser.add_argument('--slack', action='store_true', help='Enable Slack notifications')
+    parser.add_argument('--ai-summary', action='store_true', help='Generate AI summary of changes (requires OPENAI_API_KEY)')
     
     args = parser.parse_args()
     

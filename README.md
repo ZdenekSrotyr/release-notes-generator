@@ -12,6 +12,7 @@ Jednoduchý nástroj pro automatické generování release notes do samostatnýc
 - GitHub Actions podpora pro automatické generování
 - Samostatné soubory release notes pro každý release komponenty v adresáři `release_notes`
 - Automatická detekce posledního vygenerovaného release
+- AI sumarizace změn pomocí OpenAI API (volitelné)
 
 ## Instalace
 
@@ -42,8 +43,12 @@ python main.py --since-last-run
 export SLACK_WEBHOOK_URL="https://hooks.slack.com/services/xxx/yyy/zzz"
 python main.py --slack
 
+# Příklad použití s AI sumarizací
+export OPENAI_API_KEY="sk-your_openai_api_key_here"
+python main.py --ai-summary
+
 # Kompletní příklad
-python main.py --since-last-run --slack
+python main.py --since-last-run --slack --ai-summary
 ```
 
 ### Všechny parametry příkazové řádky
@@ -51,6 +56,7 @@ python main.py --since-last-run --slack
 ```
 --since-last-run    Generuje od data posledního souboru v adresáři release_notes
 --slack             Povolí odesílání notifikací na Slack
+--ai-summary        Generuje AI shrnutí změn (vyžaduje OPENAI_API_KEY)
 ```
 
 ### Proměnné prostředí
@@ -59,6 +65,7 @@ Používají se následující proměnné prostředí:
 
 - `GITHUB_TOKEN` - GitHub API token (povinný)
 - `SLACK_WEBHOOK_URL` - Slack webhook URL (pro Slack notifikace)
+- `OPENAI_API_KEY` - OpenAI API klíč (pro AI shrnutí změn)
 
 ### GitHub Actions
 
@@ -116,3 +123,16 @@ Tato funkce pomáhá s:
 - Sledováním, které release již byly zpracovány
 - Vytvářením strukturovaného archivu všech releasů komponent
 - Zjednodušením procesu informování o nových releasech 
+
+## AI sumarizace změn
+
+Nástroj podporuje automatické generování shrnutí změn pomocí umělé inteligence (OpenAI):
+
+1. Pro použití této funkce nastavte parametr `--ai-summary` při spuštění
+2. Nastavte proměnnou prostředí `OPENAI_API_KEY` s platným OpenAI API klíčem
+3. Automaticky se vygeneruje shrnutí změn mezi tagy
+
+Tato funkce:
+- Vytváří stručné a přehledné shrnutí technických změn
+- Zvýrazňuje nejdůležitější změny v release
+- Doplňuje detailní list změn o rychlý přehled 

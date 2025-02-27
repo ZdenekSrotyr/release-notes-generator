@@ -1,138 +1,179 @@
 # Release Notes Generator
 
-Jednoduchý nástroj pro automatické generování release notes do samostatných souborů pro komponenty a repozitáře.
+A simple tool for automatic generation of release notes into separate files for components and repositories in the Keboola organization.
 
-## Funkce
+## Table of Contents
+- [Overview](#overview)
+- [Features](#features)
+- [Installation](#installation)
+- [Usage](#usage)
+  - [Quick Start](#quick-start)
+  - [Command Line Parameters](#command-line-parameters)
+  - [Environment Variables](#environment-variables)
+- [AI Summary](#ai-summary)
+- [GitHub Actions](#github-actions)
+- [Slack Integration](#slack-integration)
+- [Last Run Detection](#last-run-detection)
+- [Customizing Output](#customizing-output)
+- [Release Notes Structure](#release-notes-structure)
 
-- Automatické vyhledávání repozitářů obsahujících "component" v názvu
-- Extrakce názvu komponenty z `.github/workflows/push.yml` (KBC_DEVELOPERPORTAL_APP)
-- Získávání změn mezi tagy a informací z pull requestů
-- Chronologické řazení releasů podle data tagu
-- Integrace se Slack pro sdílení nových release notes
-- GitHub Actions podpora pro automatické generování
-- Samostatné soubory release notes pro každý release komponenty v adresáři `release_notes`
-- Automatická detekce posledního vygenerovaného release
-- AI sumarizace změn pomocí OpenAI API (volitelné)
+## Overview
 
-## Instalace
+This tool automatically scans GitHub repositories, looks for new tags, and creates structured release notes for each new component version. The process is fully automated and can run as a scheduled GitHub Action.
+
+## Features
+
+✅ Automatic discovery of repositories containing "component" in their name within the Keboola organization  
+✅ Component name extraction from `.github/workflows/push.yml` (KBC_DEVELOPERPORTAL_APP)  
+✅ Retrieval of changes between tags and pull request information  
+✅ Chronological ordering of releases by tag date  
+✅ Slack integration for sharing new release notes  
+✅ GitHub Actions support for automatic generation  
+✅ Separate release notes files for each component release in the `release_notes` directory  
+✅ Automatic detection of the last generated release  
+✅ **AI summary of changes using OpenAI API** (optional)
+
+## Installation
 
 ```bash
-# Naklonování repozitáře
-git clone https://github.com/your-org/release-notes-generator.git
+# Clone the repository
+git clone https://github.com/keboola/release-notes-generator.git
 cd release-notes-generator
 
-# Instalace závislostí
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-## Použití
+## Usage
 
-### Parametry příkazové řádky
+### Quick Start
 
 ```bash
-# Nastavení GitHub tokenu (povinné)
+# Set GitHub token (required)
 export GITHUB_TOKEN="ghp_your_token_here"
 
-# Základní použití - generuje release notes od minulého dne
+# Basic usage - generates release notes from the previous day
 python main.py
+```
 
-# Generování od posledního spuštění
+### Command Line Parameters
+
+```bash
+# Generate from the last run
 python main.py --since-last-run
 
-# Povolení Slack notifikací (vyžaduje webhook URL)
+# Enable Slack notifications (requires webhook URL)
 export SLACK_WEBHOOK_URL="https://hooks.slack.com/services/xxx/yyy/zzz"
 python main.py --slack
 
-# Příklad použití s AI sumarizací
+# Example with AI summary
 export OPENAI_API_KEY="sk-your_openai_api_key_here"
 python main.py --ai-summary
 
-# Kompletní příklad
+# Complete example
 python main.py --since-last-run --slack --ai-summary
 ```
 
-### Všechny parametry příkazové řádky
+### All Command Line Parameters
 
 ```
---since-last-run    Generuje od data posledního souboru v adresáři release_notes
---slack             Povolí odesílání notifikací na Slack
---ai-summary        Generuje AI shrnutí změn (vyžaduje OPENAI_API_KEY)
+--since-last-run    Generate from the date of the last file in the release_notes directory
+--slack             Enable sending notifications to Slack
+--ai-summary        Generate AI summary of changes (requires OPENAI_API_KEY)
 ```
 
-### Proměnné prostředí
+### Environment Variables
 
-Používají se následující proměnné prostředí:
+The following environment variables are used:
 
-- `GITHUB_TOKEN` - GitHub API token (povinný)
-- `SLACK_WEBHOOK_URL` - Slack webhook URL (pro Slack notifikace)
-- `OPENAI_API_KEY` - OpenAI API klíč (pro AI shrnutí změn)
+- `GITHUB_TOKEN` - GitHub API token (required)
+- `SLACK_WEBHOOK_URL` - Slack webhook URL (for Slack notifications)
+- `OPENAI_API_KEY` - OpenAI API key (for AI summaries)
 
-### GitHub Actions
+## AI Summary
 
-Součástí je GitHub Actions workflow, který umožňuje:
+The tool supports automatic generation of change summaries using artificial intelligence (OpenAI):
 
-1. Generovat release notes automaticky podle rozvrhu
-2. Spouštět generování ručně s vlastními parametry
-3. Commity nových release notes přímo do repozitáře
-4. Volitelně odesílat notifikace na Slack
+1. To use this feature, set the `--ai-summary` parameter at startup
+2. Set the `OPENAI_API_KEY` environment variable with a valid OpenAI API key
+3. A summary of changes between tags will be automatically generated
 
-Nastavení:
+**Benefits of AI Summarization:**
+- Creates concise and clear summaries of technical changes (max. 150 words)
+- Identifies and highlights the most important changes in the release
+- Complements the detailed list of changes with a quick overview for better understanding
+- Facilitates rapid comprehension of the essence of a new release
 
-1. Přidejte tajemství (secrets) do vašeho GitHub repozitáře:
-   - `GITHUB_TOKEN` (poskytováno automaticky)
-   - `SLACK_WEBHOOK_URL` (pro Slack notifikace)
+**Technical Details:**
+- Uses the GPT-3.5 Turbo model from OpenAI
+- Analyzes commit and PR titles
+- The result is displayed in the "AI Summary" section in the release notes
 
-2. Workflow lze spustit:
-   - Ručně z karty Actions
-   - Automaticky podle nastaveného rozvrhu
+## GitHub Actions
 
-## Slack integrace
+The included GitHub Actions workflow allows:
 
-Sdílejte release notes se svým týmem přes Slack:
+1. Generating release notes automatically on a schedule
+2. Running generation manually with custom parameters
+3. Committing new release notes directly to the repository
+4. Optionally sending notifications to Slack
+5. Optionally generating AI summaries of changes
 
-1. Nastavte parametr `--slack` při spuštění nástroje
-2. Poskytněte webhook URL přes proměnnou prostředí `SLACK_WEBHOOK_URL`
+### GitHub Actions Setup
 
-Slack zpráva obsahuje:
-- Seznam komponent, které byly aktualizovány
-- Názvy tagů a data vydání
-- Až 3 změny pro každý tag s odkazem na GitHub
-- Informaci o celkovém počtu změn
+1. Add secrets to your GitHub repository:
+   - `GITHUB_TOKEN` (provided automatically)
+   - `SLACK_WEBHOOK_URL` (for Slack notifications)
+   - `OPENAI_API_KEY` (for AI summary)
 
-## Funkce detekce od posledního spuštění
+2. The workflow can be triggered:
+   - Manually from the Actions tab with parameter options
+   - Automatically according to a schedule (uncomment the `schedule` section in `.github/workflows/generate-release-notes.yml`)
 
-Parametr `--since-last-run` automaticky detekuje datum posledního souboru v adresáři `release_notes` a generuje nové položky od tohoto data. To je užitečné pro:
+## Slack Integration
 
-1. Inkrementální aktualizace bez ručního zadávání dat
-2. Zajištění, že nebudou vynechány žádné release mezi spuštěními
-3. Automatizované pravidelné aktualizace pomocí GitHub Actions
+Share release notes with your team via Slack:
 
-## Přizpůsobení výstupu
+1. Set the `--slack` parameter when running the tool
+2. Provide the webhook URL via the `SLACK_WEBHOOK_URL` environment variable
 
-Přizpůsobte výstup úpravou šablony v adresáři `templates`. Šablona pro release poznámky komponenty je `component-release.md.j2`, která používá formát Jinja2.
+The Slack message includes:
+- List of components that were updated
+- Tag names and release dates
+- Up to 3 changes for each tag with a link to GitHub
+- Information about the total number of changes
 
-## Release Notes souborů
+## Last Run Detection
 
-Nástroj generuje samostatné soubory release notes pro každý release komponenty:
+The `--since-last-run` parameter automatically detects the date of the last file in the `release_notes` directory and generates new items from that date. This is useful for:
 
-1. Každý release komponenty je uložen jako samostatný soubor v adresáři `release_notes`
-2. Soubory jsou pojmenovány ve formátu `YYYY-MM-DD-HH-MM-SS_tag_component-name.md`
-3. To umožňuje lepší organizaci a sledování releasů podle komponent
+1. Incremental updates without manual date input
+2. Ensuring no releases are missed between runs
+3. Automated regular updates via GitHub Actions
 
-Tato funkce pomáhá s:
-- Sledováním, které release již byly zpracovány
-- Vytvářením strukturovaného archivu všech releasů komponent
-- Zjednodušením procesu informování o nových releasech 
+## Customizing Output
 
-## AI sumarizace změn
+Customize the output by modifying the template in the `templates` directory. The template for component release notes is `component-release.md.j2`, which uses the Jinja2 format.
 
-Nástroj podporuje automatické generování shrnutí změn pomocí umělé inteligence (OpenAI):
+### Template Structure
 
-1. Pro použití této funkce nastavte parametr `--ai-summary` při spuštění
-2. Nastavte proměnnou prostředí `OPENAI_API_KEY` s platným OpenAI API klíčem
-3. Automaticky se vygeneruje shrnutí změn mezi tagy
+The template includes sections:
+- Header with component name and tag
+- Release date and links to GitHub
+- AI summary of changes (if available)
+- List of all changes with links to pull requests
+- Metadata about generation
 
-Tato funkce:
-- Vytváří stručné a přehledné shrnutí technických změn
-- Zvýrazňuje nejdůležitější změny v release
-- Doplňuje detailní list změn o rychlý přehled 
+## Release Notes Structure
+
+The tool generates separate release notes files for each component release:
+
+1. Each component release is stored as a separate file in the `release_notes` directory
+2. Files are named in the format `YYYY-MM-DD-HH-MM-SS_tag_component-name.md`
+3. This allows better organization and tracking of releases by component
+
+This feature helps with:
+- Tracking which releases have already been processed
+- Creating a structured archive of all component releases
+- Simplifying the process of reporting on new releases
+- Ability to easily search for release history for a specific component 

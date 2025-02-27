@@ -496,14 +496,14 @@ class ReleaseNotesGenerator:
                 tags = []
                 for tag in all_repo_tags:
                     # Check if we should only process new releases
-                    date_str = tag['date'].strftime('%Y-%m-%d')
+                    timestamp = tag['date'].strftime('%Y-%m-%d-%H-%M-%S')
                     component_name_normalized = component_name.replace('.', '-').replace(' ', '-').lower()
-                    file_name = f"{date_str}_{component_name_normalized}_{tag['name']}.md"
+                    file_name = f"{timestamp}_{tag['name']}_{component_name_normalized}.md"
                     file_path = os.path.join(self.release_notes_dir, file_name)
                     
                     # Skip if we're only processing new releases and this one exists
                     if self.only_new_releases and os.path.exists(file_path):
-                        logger.debug(f"Skipping existing release: {component_name} {tag['name']} from {date_str}")
+                        logger.debug(f"Skipping existing release: {component_name} {tag['name']} from {timestamp}")
                         continue
                     
                     if start_date <= tag['date'] <= end_date:
@@ -637,10 +637,11 @@ class ReleaseNotesGenerator:
     
     def save_component_release_note(self, entry):
         """Save a release note for a single component release."""
-        # Format: YYYY-MM-DD_component-name.md
-        date_str = entry['date'].strftime('%Y-%m-%d')
+        # Format: YYYY-MM-DD-HH-MM-SS_tag_component-name.md
+        timestamp = entry['date'].strftime('%Y-%m-%d-%H-%M-%S')
         component_name = entry['component_name'].replace('.', '-').replace(' ', '-').lower()
-        file_name = f"{date_str}_{component_name}_{entry['tag_name']}.md"
+        tag_name = entry['tag_name']
+        file_name = f"{timestamp}_{tag_name}_{component_name}.md"
         file_path = os.path.join(self.release_notes_dir, file_name)
         
         # Check if this release note already exists

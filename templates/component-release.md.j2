@@ -4,6 +4,7 @@ _Released on {{ entry.date.strftime('%Y-%m-%d') }}_
 
 **Component:** [{{ entry.component_name }}](https://github.com/keboola/{{ entry.repo_name }})  
 **Tag:** [{{ entry.tag_name }}]({{ entry.tag_url }})  
+**Stage:** {{ entry.component_stage }}  
 
 {% if entry.ai_description %}
 ## AI Summary
@@ -24,6 +25,18 @@ _Released on {{ entry.date.strftime('%Y-%m-%d') }}_
 _No changes were detected between {{ entry.previous_tag }} and {{ entry.tag_name }}._
 
 [Compare on GitHub](https://github.com/{{ entry.repo_name }}/compare/{{ entry.previous_tag }}...{{ entry.tag_name }})
+{% endif %}
+
+{% if entry.component_details %}
+## Component Information
+**Type:** {{ entry.component_details.get('type', 'Unknown') }}  
+**Name:** {{ entry.component_details.get('name', 'Unknown') }}  
+{% if entry.component_details.get('description') %}
+**Description:** {{ entry.component_details.get('description') }}  
+{% endif %}
+{% if entry.component_details.get('documentationUrl') %}
+**Documentation:** [Link]({{ entry.component_details.get('documentationUrl') }})  
+{% endif %}
 {% endif %}
 
 ---

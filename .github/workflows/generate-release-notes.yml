@@ -3,20 +3,10 @@ name: Generate Release Notes
 on:
   workflow_dispatch:
     inputs:
-      since_last_run:
-        description: 'Generate from the last run'
-        required: false
-        default: true
-        type: boolean
       slack_notify:
         description: 'Send to Slack'
         required: false
         default: true
-        type: boolean
-      ai_summary:
-        description: 'Generate AI summaries of changes'
-        required: false
-        default: false
         type: boolean
 #  schedule:
 #    # Run on the 1st of every month at 8:00 AM UTC
@@ -45,9 +35,7 @@ jobs:
       - name: Generate release notes
         run: |
           python main.py \
-            ${{ github.event.inputs.since_last_run == true && '--since-last-run' || '' }} \
-            ${{ github.event.inputs.slack_notify == true && '--slack' || '' }} \
-            ${{ github.event.inputs.ai_summary == true && '--ai-summary' || '' }}
+            ${{ github.event.inputs.slack_notify == true && '--slack' || '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

@@ -14,6 +14,7 @@ A simple tool for automatic generation of release notes into separate files for 
 - [GitHub Actions](#github-actions)
 - [Slack Integration](#slack-integration)
 - [Last Run Detection](#last-run-detection)
+- [Performance Optimization](#performance-optimization)
 - [Customizing Output](#customizing-output)
 - [Release Notes Structure](#release-notes-structure)
 
@@ -31,7 +32,8 @@ This tool automatically scans GitHub repositories, looks for new tags, and creat
 ✅ GitHub Actions support for automatic generation  
 ✅ Separate release notes files for each component release in the `release_notes` directory  
 ✅ Automatic detection of the last generated release  
-✅ **AI summary of changes using OpenAI API** (optional)
+✅ **AI summary of changes using OpenAI API** (optional)  
+✅ **Optimized tag search** for performance with large repositories
 
 ## Installation
 
@@ -150,6 +152,26 @@ The `--since-last-run` parameter automatically detects the date of the last file
 1. Incremental updates without manual date input
 2. Ensuring no releases are missed between runs
 3. Automated regular updates via GitHub Actions
+
+## Performance Optimization
+
+The tool implements several optimizations to speed up tag searching, especially for repositories with many tags:
+
+1. **Efficient API Usage**:
+   - Retrieves only commits within the target date range first
+   - Only checks tags whose commits fall within the target period
+   - Limits tag fetching to recent tags (30 by default)
+
+2. **Smart Tag Filtering**:
+   - Uses SHA matching to connect tags with relevant commits
+   - Avoids retrieving all tags when only recent ones are needed
+   - Reduces unnecessary API calls when searching for previous tags
+
+3. **Fallback Mechanisms**:
+   - Handles edge cases gracefully with intelligent fallbacks
+   - Provides detailed logging for troubleshooting
+
+These optimizations significantly reduce processing time, especially for organizations with many repositories or repositories with extensive tag histories.
 
 ## Customizing Output
 

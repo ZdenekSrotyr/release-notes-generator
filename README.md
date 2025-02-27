@@ -15,6 +15,7 @@ A simple tool for automatic generation of release notes into separate files for 
 - [Slack Integration](#slack-integration)
 - [Last Run Detection](#last-run-detection)
 - [Performance Optimization](#performance-optimization)
+- [Release Notes Logic](#release-notes-logic)
 - [Customizing Output](#customizing-output)
 - [Release Notes Structure](#release-notes-structure)
 
@@ -34,7 +35,8 @@ This tool automatically scans GitHub repositories, looks for new tags, and creat
 ✅ Automatic detection of the last generated release  
 ✅ **AI summary of changes using OpenAI API** (optional)  
 ✅ **Optimized tag search** for performance with large repositories  
-✅ **Extended timeframe** - searches for releases within the last 30 days by default
+✅ **Extended timeframe** - searches for releases within the last 30 days by default  
+✅ **Smart filtering** - only creates release notes when actual changes exist between tags
 
 ## Installation
 
@@ -173,6 +175,26 @@ The tool implements several optimizations to speed up tag searching, especially 
    - Provides detailed logging for troubleshooting
 
 These optimizations significantly reduce processing time and improve reliability, especially for organizations with many repositories or repositories with extensive tag histories.
+
+## Release Notes Logic
+
+The tool follows specific logic when determining which release notes to generate:
+
+1. **Change Detection**:
+   - Only creates release notes when actual changes exist between tags
+   - Skips tags that have no code changes or commits between them
+   - Logs information about skipped releases for monitoring
+
+2. **De-duplication**:
+   - Checks if a release note already exists for a specific tag before creating it
+   - Uses file naming based on tag timestamp to ensure uniqueness
+   - Prevents duplicate release notes when running the tool multiple times
+
+3. **Incremental Processing**:
+   - With `--since-last-run`, only processes new tags since the last execution
+   - Efficiently handles new tags without reprocessing existing ones
+
+This approach ensures that the release notes are meaningful and represent actual changes in the codebase.
 
 ## Customizing Output
 

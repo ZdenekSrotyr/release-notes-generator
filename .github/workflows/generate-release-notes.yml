@@ -21,6 +21,26 @@ on:
         description: 'Repository name (e.g. "repo-name") or full path (e.g. "org/repo-name"). Leave empty for all repos.'
         required: false
         type: string
+      organization:
+        description: 'GitHub organization'
+        required: false
+        default: 'keboola'
+        type: string
+      repo_patterns:
+        description: 'Repository search patterns (comma separated)'
+        required: false
+        default: 'component'
+        type: string
+      since_last_run:
+        description: 'Generate from the last run'
+        required: false
+        default: true
+        type: boolean
+      use_ai:
+        description: 'Use AI to generate descriptions'
+        required: false
+        default: false
+        type: boolean
 #  schedule:
 #    # Run on the 1st of every month at 8:00 AM UTC
 #    - cron: '0 8 1 * *'
@@ -45,38 +65,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       
-      - name: Create config file
-        run: |
-          cat > config.yml << EOF
-          # GitHub API Token
-          # github_token automatically provided by GitHub Actions
-          
-          # GitHub organization
-          organization: "keboola"
-          
-          # Time period for release notes
-          time_period: "${{ github.event.inputs.time_period || 'last-month' }}"
-          
-          # Repository search patterns
-          repo_patterns:
-            - "component"
-          
-          # Template directory
-          template_dir: "templates"
-          
-          # Output file
-          output_file: "release-notes.md"
-          
-          # AI-powered description generation
-          use_ai: ${{ secrets.AI_API_KEY != '' }}
-          ai_provider: "openai"
-          
-          # Slack integration
-          slack_enabled: ${{ (github.event.inputs.slack_notify == true || github.event_name == 'schedule') && secrets.SLACK_WEBHOOK_URL != '' }}
-          EOF
-      
       - name: Generate release notes
-        run: python main.py ${{ github.event.inputs.single_repo != '' && format('-r {0}', github.event.inputs.single_repo) || '' }}
+        run: |
+          python main.py \
+            -t "${{ github.event.inputs.time_period || 'last-month' }}" \
+            -o "${{ github.event.inputs.organization || 'keboola' }}" \
+            -p "${{ github.event.inputs.repo_patterns || 'component' }}" \
+            ${{ github.event.inputs.single_repo != '' && format('-r {0}', github.event.inputs.single_repo) || '' }} \
+            ${{ github.event.inputs.since_last_run == true && '--since-last-run' || '' }} \
+            ${{ github.event.inputs.slack_notify == true && '--slack-enabled' || '' }} \
+            ${{ github.event.inputs.use_ai == true && '--use-ai' || '' }} \
+            -v
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AI_API_KEY: ${{ secrets.AI_API_KEY }}

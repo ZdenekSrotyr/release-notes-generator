@@ -7,6 +7,8 @@ import argparse
 import datetime
 import requests
 import logging
+import re
+from pathlib import Path
 from github import Github
 from jinja2 import Environment, FileSystemLoader
 
@@ -19,58 +21,101 @@ logging.basicConfig(
 logger = logging.getLogger('release-notes-generator')
 
 class ReleaseNotesGenerator:
-    def __init__(self, config_file, single_repo=None):
-        """Initialize the generator with configuration."""
-        logger.info(f"Initializing generator with config file: {config_file}")
+    def __init__(self, args):
+        """Initialize the generator with arguments."""
+        logger.info(f"Initializing generator")
+        
+        # Store command line arguments
+        self.args = args
         
         # Store single repo override if provided
-        self.single_repo = single_repo
-        if single_repo:
-            logger.info(f"Single repository mode: {single_repo}")
+        self.single_repo = args.repo
+        if self.single_repo:
+            logger.info(f"Single repository mode: {self.single_repo}")
         
-        try:
-            with open(config_file, 'r') as f:
-                self.config = yaml.safe_load(f)
-                logger.info(f"Configuration loaded successfully")
-        except Exception as e:
-            logger.error(f"Failed to load configuration: {e}")
-            raise
-        
-        self.github_token = self.config.get('github_token') or os.environ.get('GITHUB_TOKEN')
+        # GitHub configuration
+        self.github_token = os.environ.get('GITHUB_TOKEN')
         if not self.github_token:
             logger.error("GitHub token is missing")
-            raise ValueError("GitHub token is required. Set it in config or GITHUB_TOKEN env variable.")
+            raise ValueError("GitHub token is required. Set GITHUB_TOKEN env variable.")
         else:
             logger.info("GitHub token found")
         
         self.github = Github(self.github_token)
-        self.time_period = self.config.get('time_period', 'last-month')
+        self.organization = args.organization
+        
+        # Time period configuration
+        if args.since_last_run:
+            logger.info("Using since-last-run mode, will detect time period from previous run")
+            self.time_period = self._detect_time_period_from_last_run()
+        else:
+            self.time_period = args.time_period
+        
         logger.info(f"Time period set to: {self.time_period}")
         
-        self.template_dir = self.config.get('template_dir', 'templates')
-        self.output_file = self.config.get('output_file', 'release-notes.md')
+        # Template and output configuration
+        self.template_dir = args.template_dir
+        self.output_file = args.output_file
         logger.info(f"Output will be written to: {self.output_file}")
         
         # AI configuration
-        self.use_ai = self.config.get('use_ai', False)
-        self.ai_provider = self.config.get('ai_provider', 'openai')
-        self.ai_api_key = self.config.get('ai_api_key') or os.environ.get('AI_API_KEY')
+        self.use_ai = args.use_ai
+        self.ai_provider = 'openai'  # Currently only supporting OpenAI
+        self.ai_api_key = os.environ.get('AI_API_KEY')
         
         if self.use_ai:
             if self.ai_api_key:
                 logger.info(f"AI generation enabled with provider: {self.ai_provider}")
             else:
                 logger.warning("AI generation enabled but no API key provided")
+                self.use_ai = False
         
         # Slack configuration
-        self.slack_enabled = self.config.get('slack_enabled', False)
-        self.slack_webhook_url = self.config.get('slack_webhook_url') or os.environ.get('SLACK_WEBHOOK_URL')
+        self.slack_enabled = args.slack_enabled
+        self.slack_webhook_url = os.environ.get('SLACK_WEBHOOK_URL')
         
         if self.slack_enabled:
             if self.slack_webhook_url:
                 logger.info("Slack integration enabled")
             else:
                 logger.warning("Slack integration enabled but no webhook URL provided")
+                self.slack_enabled = False
+    
+    def _detect_time_period_from_last_run(self):
+        """Detect time period by parsing the last generated release notes file."""
+        try:
+            if not os.path.exists(self.args.output_file):
+                logger.warning(f"Previous output file {self.args.output_file} not found. Using default time period.")
+                return self.args.time_period
+            
+            logger.info(f"Analyzing previous release notes file: {self.args.output_file}")
+            
+            # Read the file
+            with open(self.args.output_file, 'r') as f:
+                content = f.read()
+            
+            # Look for the date of the most recent entry
+            date_pattern = r'### (\d{4}-\d{2}-\d{2}) -'
+            dates = re.findall(date_pattern, content)
+            
+            if not dates:
+                logger.warning("No dates found in previous release notes. Using default time period.")
+                return self.args.time_period
+            
+            # Find the most recent date
+            most_recent_date = max(dates)
+            logger.info(f"Most recent date found in release notes: {most_recent_date}")
+            
+            # Create a custom time period from that date to now
+            today = datetime.datetime.now().strftime('%Y-%m-%d')
+            time_period = f"{most_recent_date}-to-{today}"
+            logger.info(f"Setting time period to: {time_period}")
+            
+            return time_period
+            
+        except Exception as e:
+            logger.error(f"Error detecting time period from last run: {e}")
+            return self.args.time_period
         
     def get_date_range(self):
         """Convert time period to actual dates."""
@@ -116,11 +161,10 @@ class ReleaseNotesGenerator:
                 if '/' in self.single_repo:
                     full_name = self.single_repo
                 else:
-                    organization = self.config.get('organization')
-                    if not organization:
-                        logger.error(f"No organization specified in config and repository '{self.single_repo}' does not include organization")
+                    if not self.organization:
+                        logger.error(f"No organization specified and repository '{self.single_repo}' does not include organization")
                         return []
-                    full_name = f"{organization}/{self.single_repo}"
+                    full_name = f"{self.organization}/{self.single_repo}"
                 
                 logger.info(f"Fetching repository: {full_name}")
                 repos.append(self.github.get_repo(full_name))
@@ -130,12 +174,11 @@ class ReleaseNotesGenerator:
                 logger.error(f"Failed to find repository {self.single_repo}: {e}")
                 return []
         
-        # Otherwise use configured repos
-        # Get repos by pattern (containing "component")
-        if self.config.get('repo_patterns'):
-            for pattern in self.config['repo_patterns']:
+        # Get repos by pattern
+        if self.args.repo_patterns:
+            for pattern in self.args.repo_patterns.split(','):
                 logger.info(f"Searching for repos with pattern: {pattern}")
-                query = f"org:{self.config['organization']} {pattern} in:name"
+                query = f"org:{self.organization} {pattern} in:name"
                 logger.debug(f"GitHub API query: {query}")
                 
                 search_results = self.github.search_repositories(query=query)
@@ -147,10 +190,11 @@ class ReleaseNotesGenerator:
                 logger.info(f"Found {count} repositories matching pattern '{pattern}'")
         
         # Get explicitly listed repos
-        if self.config.get('repos'):
-            logger.info(f"Adding {len(self.config['repos'])} explicitly listed repositories")
-            for repo_name in self.config['repos']:
-                full_name = f"{self.config['organization']}/{repo_name}"
+        if self.args.repos:
+            repo_list = self.args.repos.split(',')
+            logger.info(f"Adding {len(repo_list)} explicitly listed repositories")
+            for repo_name in repo_list:
+                full_name = f"{self.organization}/{repo_name.strip()}"
                 logger.debug(f"Adding repository: {full_name}")
                 try:
                     repos.append(self.github.get_repo(full_name))
@@ -265,7 +309,6 @@ class ReleaseNotesGenerator:
                     logger.error(f"Failed to get commits by date: {e}")
                     
             changes = []
-            files_changed = []
             
             # Get PR information from commits
             logger.debug("Extracting PR information from commits")
@@ -305,39 +348,7 @@ class ReleaseNotesGenerator:
                         'url': commit.html_url
                     })
             
-            # Get files changed
-            logger.debug(f"Fetching changed files")
-            try:
-                # Convert PaginatedList to a normal list for files too
-                files_list = list(comparison.files)
-                for file in files_list:
-                    files_changed.append({
-                        'filename': file.filename,
-                        'status': file.status,
-                        'additions': file.additions,
-                        'deletions': file.deletions
-                    })
-            except Exception as e:
-                logger.warning(f"Failed to get file changes: {e}. Using commit data instead.")
-                # If we can't get files from comparison, use data from commits
-                file_changes = set()
-                for commit in commits_list:  # Use the converted list here
-                    try:
-                        commit_files = list(commit.files)  # Convert PaginatedList to list
-                        for file in commit_files:
-                            file_data = {
-                                'filename': file.filename,
-                                'status': file.status,
-                                'additions': file.additions,
-                                'deletions': file.deletions
-                            }
-                            file_changes.add(json.dumps(file_data))
-                    except Exception as file_e:
-                        logger.warning(f"Failed to get files from commit {commit.sha[:7]}: {file_e}")
-                
-                files_changed = [json.loads(f) for f in file_changes]
-            
-            logger.info(f"Comparison complete: {len(changes)} changes and {len(files_changed)} files changed")
+            logger.info(f"Comparison complete: {len(changes)} changes")
             
             # Generate AI description if enabled
             ai_description = None
@@ -347,34 +358,31 @@ class ReleaseNotesGenerator:
                     repo.name, 
                     older_tag['name'], 
                     newer_tag['name'],
-                    changes,
-                    files_changed
+                    changes
                 )
                     
             return {
                 'changes': changes,
-                'files_changed': files_changed,
                 'ai_description': ai_description
             }
         except Exception as e:
             logger.error(f"Error comparing tags in {repo.name}: {e}")
             return {
                 'changes': [],
-                'files_changed': [],
                 'ai_description': None
             }
     
-    def generate_ai_description(self, repo_name, old_tag, new_tag, changes, files_changed):
+    def generate_ai_description(self, repo_name, old_tag, new_tag, changes):
         """Generate an AI-powered description of changes between tags."""
         logger.info(f"Generating AI description for {repo_name} from {old_tag} to {new_tag}")
         
         if self.ai_provider == 'openai':
-            return self.generate_openai_description(repo_name, old_tag, new_tag, changes, files_changed)
+            return self.generate_openai_description(repo_name, old_tag, new_tag, changes)
         else:
             logger.warning(f"Unsupported AI provider {self.ai_provider}")
             return None
     
-    def generate_openai_description(self, repo_name, old_tag, new_tag, changes, files_changed):
+    def generate_openai_description(self, repo_name, old_tag, new_tag, changes):
         """Generate a description using OpenAI."""
         try:
             if not self.ai_api_key:
@@ -386,19 +394,14 @@ class ReleaseNotesGenerator:
             
             # Prepare context for the AI
             commit_messages = [change.get('title', '') for change in changes]
-            files_info = [f"{f['filename']} ({f['status']}, +{f['additions']}, -{f['deletions']})" 
-                        for f in files_changed[:10]]  # Limit to 10 files to avoid token limits
             
-            logger.debug(f"Preparing OpenAI prompt with {len(commit_messages)} commit messages and {len(files_info)} file changes")
+            logger.debug(f"Preparing OpenAI prompt with {len(commit_messages)} commit messages")
                         
             prompt = f"""
             Analyze these changes from {repo_name} between tags {old_tag} and {new_tag} and provide a concise summary:
             
             Commit messages:
             {json.dumps(commit_messages, indent=2)}
-            
-            Files changed:
-            {json.dumps(files_info, indent=2)}
             
             Please provide:
             1. A short summary of the main changes (1-2 sentences)
@@ -548,7 +551,7 @@ class ReleaseNotesGenerator:
                     change_data = self.get_changes_between_tags(repo, previous_tag, tag)
                 
                 # Check if we actually got changes
-                if not change_data['changes'] and not change_data['files_changed']:
+                if not change_data['changes']:
                     logger.warning(f"No changes found between {previous_tag['name']} and {tag['name']}. Trying additional methods.")
                     # Try a direct approach with GitHub API
                     try:
@@ -573,17 +576,6 @@ class ReleaseNotesGenerator:
                                         'commit': commit['sha'],
                                         'url': commit['html_url']
                                     })
-                            
-                            if 'files' in diff_data and diff_data['files']:
-                                logger.info(f"Found {len(diff_data['files'])} files in API response")
-                                # Create files_changed from files
-                                for file in diff_data['files']:
-                                    change_data['files_changed'].append({
-                                        'filename': file['filename'],
-                                        'status': file['status'],
-                                        'additions': file['additions'],
-                                        'deletions': file['deletions']
-                                    })
                         else:
                             logger.warning(f"API request failed with status {diff_response.status_code}: {diff_response.text}")
                     except Exception as e:
@@ -597,11 +589,10 @@ class ReleaseNotesGenerator:
                     'tag_name': tag['name'],
                     'tag_url': f"https://github.com/{repo.full_name}/releases/tag/{tag['name']}",
                     'changes': change_data['changes'],
-                    'files_changed': change_data['files_changed'],
                     'ai_description': change_data['ai_description'],
                     'previous_tag': previous_tag['name']
                 })
-                logger.debug(f"Added {tag['name']} to timeline with {len(change_data['changes'])} changes and {len(change_data['files_changed'])} files changed")
+                logger.debug(f"Added {tag['name']} to timeline with {len(change_data['changes'])} changes")
         
         # Sort timeline by date (newest first)
         logger.info(f"Sorting timeline entries (total: {len(timeline)})")
@@ -691,22 +682,6 @@ class ReleaseNotesGenerator:
                 'file': (os.path.basename(self.output_file), file_content, 'text/markdown')
             }
             
-            # For file upload, we need to use a different endpoint and token
-            # This is a simplified example; actual implementation would depend on your Slack setup
-            if self.config.get('slack_file_upload_token'):
-                logger.info("Uploading file to Slack")
-                upload_response = requests.post(
-                    'https://slack.com/api/files.upload',
-                    headers={'Authorization': f"Bearer {self.config.get('slack_file_upload_token')}"},
-                    params={'channels': self.config.get('slack_channel', '')},
-                    files=files
-                )
-                
-                if not upload_response.json().get('ok'):
-                    logger.warning(f"Failed to upload file to Slack: {upload_response.json().get('error')}")
-                else:
-                    logger.info("File uploaded to Slack successfully")
-            
             # Check if message was posted successfully
             if response.status_code != 200:
                 logger.warning(f"Failed to send message to Slack: {response.text}")
@@ -720,9 +695,30 @@ def main():
     logger.info("Starting release notes generator")
     
     parser = argparse.ArgumentParser(description='Generate release notes from GitHub repositories')
-    parser.add_argument('-c', '--config', default='config.yml', help='Path to config file')
+    
+    # GitHub settings
+    parser.add_argument('-o', '--organization', default='keboola', help='GitHub organization')
+    parser.add_argument('-r', '--repo', help='Generate for a single repository')
+    parser.add_argument('-p', '--repo-patterns', default='component', help='Repository search patterns (comma separated)')
+    parser.add_argument('--repos', help='Explicitly listed repositories (comma separated)')
+    
+    # Time settings
+    parser.add_argument('-t', '--time-period', default='last-month', 
+                        help='Time period for release notes (last-week, last-month, last-quarter, or YYYY-MM-DD-to-YYYY-MM-DD)')
+    parser.add_argument('--since-last-run', action='store_true', 
+                        help='Generate from the date of the last entry in the existing release notes file')
+    
+    # Output settings
+    parser.add_argument('--template-dir', default='templates', help='Template directory')
+    parser.add_argument('--output-file', default='release-notes.md', help='Output file')
+    
+    # Feature flags
+    parser.add_argument('--use-ai', action='store_true', help='Use AI to generate descriptions')
+    parser.add_argument('--slack-enabled', action='store_true', help='Enable Slack notifications')
+    
+    # Debug
     parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose logging')
-    parser.add_argument('-r', '--repo', help='Generate release notes for a single repository (overrides config)')
+    
     args = parser.parse_args()
     
     if args.verbose:
@@ -730,8 +726,8 @@ def main():
         logger.debug("Verbose logging enabled")
     
     try:
-        logger.info(f"Using config file: {args.config}")
-        generator = ReleaseNotesGenerator(args.config, single_repo=args.repo)
+        logger.info(f"Using command line arguments and environment variables")
+        generator = ReleaseNotesGenerator(args)
         success = generator.generate_markdown()
         
         if success:

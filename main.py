@@ -6,13 +6,10 @@ import os
 import sys
 import argparse
 
-# Add the src directory to Python path
-src_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src')
-sys.path.insert(0, src_dir)
 
 # Import from src
-from config import GITHUB_TOKEN, logger, RELEASE_NOTES_DIR
-from generator import ReleaseNotesGenerator
+from src.config import GITHUB_TOKEN, logger, RELEASE_NOTES_DIR
+from src.generator import ReleaseNotesGenerator
 
 def parse_args():
     """Parse command line arguments."""

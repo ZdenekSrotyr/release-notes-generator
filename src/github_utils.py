@@ -137,16 +137,27 @@ def get_changes_between_tags(repo, previous_tag, current_tag):
             # Check if commit is a pull request merge
             pr_number = None
             pr_title = None
+            pr_body = None
 
             # Look for PR reference in commit message
             merge_match = re.search(r'Merge pull request #(\d+)', commit.commit.message)
             if merge_match:
                 pr_number = merge_match.group(1)
 
-                # Extract the PR title from the commit message (usually after the first line)
-                message_lines = commit.commit.message.strip().split('\n')
-                if len(message_lines) > 1:
-                    pr_title = message_lines[1].strip()
+                # Try to get the full PR information
+                try:
+                    pr = repo.get_pull(int(pr_number))
+                    pr_title = pr.title
+                    pr_body = pr.body
+                except Exception as e:
+                    logger.warning(f"Could not fetch PR #{pr_number} details: {e}")
+                    # Fallback to extracting from commit message
+                    message_lines = commit.commit.message.strip().split('\n')
+                    if len(message_lines) > 1:
+                        pr_title = message_lines[1].strip()
+                        # Extract the rest as body if available
+                        if len(message_lines) > 2:
+                            pr_body = '\n'.join(message_lines[2:]).strip()
 
             # Create change entry
             change = {
@@ -162,6 +173,8 @@ def get_changes_between_tags(repo, previous_tag, current_tag):
                 change['pr_number'] = pr_number
                 change['pr_url'] = f"https://github.com/{repo.full_name}/pull/{pr_number}"
                 change['title'] = pr_title if pr_title else f"PR #{pr_number}"
+                if pr_body:
+                    change['pr_body'] = pr_body
             else:
                 change['title'] = commit.commit.message.split('\n')[0]
 

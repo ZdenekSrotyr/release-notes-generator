@@ -13,21 +13,14 @@ _Released on {{ entry.date.strftime('%Y-%m-%d') }}_
 
 {% if entry.changes %}
 ## Changes:
+{% set seen_titles = [] %}
 {% for change in entry.changes %}
-{% if change.title %}
-- {{ change.title }} {% if change.pr_number %}([#{{ change.pr_number }}]({{ change.pr_url }})){% endif %}
-{% if change.commit_message and change.commit_message|length > change.title|length %}
-{{ change.commit_message }}
-{% endif %}
+{% if change.title not in seen_titles %}
+- {{ change.title }} {% if change.number %}([#{{ change.number }}]({{ change.url }})){% endif %}
+{% set _ = seen_titles.append(change.title) %}
 {% endif %}
 {% endfor %}
-
-[Compare on GitHub](https://github.com/{{ entry.github_organization }}/{{ entry.repo_name }}
-/compare/{{ entry.previous_tag }}...{{ entry.tag_name }})
-{% else %}
-## Changes (commits):
-_No changes were detected between {{ entry.previous_tag }} and {{ entry.tag_name }}._
-
+[Compare on GitHub](https://github.com/{{ entry.github_organization }}/{{ entry.repo_name }}/compare/{{ entry.previous_tag }}...{{ entry.tag_name }})
 {% endif %}
 
 {% if entry.component_details %}

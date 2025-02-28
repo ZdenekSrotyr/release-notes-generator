@@ -19,7 +19,7 @@ class ReleaseNotesGenerator:
     def __init__(self, github_token):
         """Initialize generator with GitHub token."""
         # Initialize GitHub client
-        self.github = initialize_github_client(github_token, )
+        self.github = initialize_github_client(github_token)
         self.organization = "keboola"  # Organization is set as a constant
 
         # Detect time period from last run or use default of 30 days
@@ -226,6 +226,7 @@ class ReleaseNotesGenerator:
                     'date': tag['date'],
                     'type': 'release',
                     'repo_name': repo.name,
+                    'github_organization': self.organization,
                     'component_name': component_name,
                     'component_details': component_details,
                     'tag_name': tag['name'],

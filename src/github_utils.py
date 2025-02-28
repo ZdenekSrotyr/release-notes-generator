@@ -8,7 +8,7 @@ from src.config import GITHUB_ORGANIZATION, REPO_PATTERNS, logger
 def initialize_github_client(token):
     """Initialize GitHub client with the provided token."""
     try:
-        github = Github(token)
+        github = Github(token, retry=None)
         return github
     except Exception as e:
         logger.error(f"Error initializing GitHub client: {e}")
@@ -126,11 +126,51 @@ def get_changes_between_tags(repo, previous_tag, current_tag):
     }
 
     try:
-        # Get comparison between tags
-        comparison = repo.compare(previous_tag['commit'], current_tag['commit'])
-
-        # Get commits
-        commits = comparison.commits
+        # Set a max number of commits to process to avoid rate limits
+        MAX_COMMITS = 50
+        commit_count = 0
+        
+        try:
+            # Get comparison between tags
+            comparison = repo.compare(previous_tag['commit'], current_tag['commit'])
+            
+            # Handle PaginatedList for commits - don't use len() as it's not supported
+            commits = []
+            # Get only up to MAX_COMMITS to avoid rate limits
+            for commit in comparison.commits:
+                commits.append(commit)
+                commit_count += 1
+                if commit_count >= MAX_COMMITS:
+                    logger.warning(f"Limiting commit processing to {MAX_COMMITS} commits for {repo.name}")
+                    break
+                    
+            # Check if comparison indicates there are changes but we got no commits
+            if not commits and hasattr(comparison, 'ahead_by') and comparison.ahead_by > 0:
+                logger.warning(f"Comparison indicates {comparison.ahead_by} commits ahead but no commits were returned")
+                # Add placeholder entry
+                result['changes'].append({
+                    'title': f"Changes between {previous_tag['name']} and {current_tag['name']} (details unavailable)",
+                    'commit_message': f"{comparison.ahead_by} commits were made but details are unavailable",
+                    'date': current_tag['date'],
+                    'author': 'Unknown'
+                })
+                return result
+                
+        except Exception as e:
+            # If comparison fails due to permission issues (403 Forbidden), provide minimal information
+            if '403' in str(e):
+                logger.warning(f"Received 403 Forbidden when comparing tags in {repo.name}, providing minimal info")
+                # Create minimal change entry with just the tag information
+                result['changes'].append({
+                    'title': f"Tag {current_tag['name']} (commit details unavailable due to access restrictions)",
+                    'commit_message': "Access to commit details restricted",
+                    'date': current_tag['date'],
+                    'author': 'Unknown'
+                })
+                return result
+            else:
+                # For other errors, re-raise
+                raise
 
         # Process each commit
         for commit in commits:
@@ -147,26 +187,49 @@ def get_changes_between_tags(repo, previous_tag, current_tag):
                 # Try to get the full PR information
                 try:
                     pr = repo.get_pull(int(pr_number))
-                    pr_title = pr.title
-                    pr_body = pr.body
+                    pr_title = sanitize_markdown_text(pr.title)
+                    
+                    # Sanitize PR body if it exists
+                    if pr.body:
+                        pr_body = sanitize_markdown_text(pr.body)
                 except Exception as e:
-                    logger.warning(f"Could not fetch PR #{pr_number} details: {e}")
+                    if '403' in str(e):
+                        logger.warning(f"Received 403 Forbidden for PR #{pr_number}, using minimal PR information")
+                        pr_title = f"PR #{pr_number} (details unavailable due to access restrictions)"
+                    else:
+                        logger.warning(f"Could not fetch PR #{pr_number} details: {e}")
+                    
                     # Fallback to extracting from commit message
                     message_lines = commit.commit.message.strip().split('\n')
-                    if len(message_lines) > 1:
-                        pr_title = message_lines[1].strip()
+                    if len(message_lines) > 1 and not pr_title:
+                        pr_title = sanitize_markdown_text(message_lines[1].strip())
                         # Extract the rest as body if available
                         if len(message_lines) > 2:
-                            pr_body = '\n'.join(message_lines[2:]).strip()
+                            pr_body = sanitize_markdown_text('\n'.join(message_lines[2:]).strip())
 
             # Create change entry
-            change = {
-                'commit_sha': commit.sha,
-                'commit_url': commit.html_url,
-                'commit_message': commit.commit.message,
-                'author': commit.commit.author.name,
-                'date': fix_timezone(commit.commit.author.date)
-            }
+            try:
+                change = {
+                    'commit_sha': commit.sha,
+                    'commit_url': commit.html_url,
+                    'commit_message': sanitize_markdown_text(commit.commit.message),
+                    'author': commit.commit.author.name,
+                    'date': fix_timezone(commit.commit.author.date)
+                }
+            except Exception as e:
+                # If accessing commit details fails (likely due to 403), create a minimal entry
+                if '403' in str(e):
+                    logger.warning(f"Received 403 Forbidden for commit {commit.sha if hasattr(commit, 'sha') else 'unknown'}, using minimal information")
+                    change = {
+                        'commit_sha': commit.sha if hasattr(commit, 'sha') else 'unknown',
+                        'commit_url': commit.html_url if hasattr(commit, 'html_url') else '',
+                        'commit_message': "Commit details unavailable due to access restrictions",
+                        'author': 'Unknown',
+                        'date': current_tag['date']  # Use tag date as fallback
+                    }
+                else:
+                    # For other errors, re-raise
+                    raise
 
             # Add PR info if available
             if pr_number:
@@ -176,10 +239,27 @@ def get_changes_between_tags(repo, previous_tag, current_tag):
                 if pr_body:
                     change['pr_body'] = pr_body
             else:
-                change['title'] = commit.commit.message.split('\n')[0]
+                # Get first line of commit message for title
+                try:
+                    first_line = commit.commit.message.split('\n')[0].strip()
+                    change['title'] = sanitize_markdown_text(first_line)
+                except Exception as e:
+                    if '403' in str(e):
+                        change['title'] = "Commit (details unavailable due to access restrictions)"
+                    else:
+                        raise
 
             # Add to changes list
             result['changes'].append(change)
+
+        # If we couldn't get any commits but know there were changes, add a placeholder entry
+        if not result['changes'] and hasattr(comparison, 'ahead_by') and comparison.ahead_by > 0:
+            result['changes'].append({
+                'title': f"Changes between {previous_tag['name']} and {current_tag['name']} (details unavailable)",
+                'commit_message': f"{comparison.ahead_by} commits were made but details are unavailable due to access restrictions",
+                'date': current_tag['date'],
+                'author': 'Unknown'
+            })
 
         # Remove duplicates (sometimes the same PR can appear twice)
         unique_changes = []
@@ -201,5 +281,46 @@ def get_changes_between_tags(repo, previous_tag, current_tag):
 
     except Exception as e:
         logger.error(f"Error getting changes between tags: {e}")
+        # Even on error, provide a minimal change entry
+        if '403' in str(e):
+            logger.warning(f"Received 403 Forbidden, providing minimal tag information")
+            result['changes'].append({
+                'title': f"Tag {current_tag['name']} (details unavailable due to access restrictions)",
+                'commit_message': "Access to commit details restricted",
+                'date': current_tag['date'],
+                'author': 'Unknown'
+            })
 
+    logger.info(f"Processed {commit_count} commits between {previous_tag['name']} and {current_tag['name']} in {repo.name}")
     return result
+
+
+def sanitize_markdown_text(text):
+    """
+    Sanitize text for safe inclusion in Markdown.
+    Ensures that Markdown code blocks and other formatting are preserved correctly.
+    """
+    if not text:
+        return ""
+    
+    # Replace code blocks with placeholders and store original content
+    code_blocks = []
+    
+    def replace_code_block(match):
+        code_blocks.append(match.group(0))
+        return f"CODE_BLOCK_{len(code_blocks) - 1}_PLACEHOLDER"
+    
+    # Replace inline code blocks first
+    text_with_placeholders = re.sub(r'`([^`]+)`', replace_code_block, text)
+    
+    # Replace triple backtick code blocks
+    text_with_placeholders = re.sub(r'```[\s\S]*?```', replace_code_block, text_with_placeholders)
+    
+    # Escape special characters that might break markdown
+    sanitized_text = text_with_placeholders.replace('\\', '\\\\')
+    
+    # Now restore the code blocks in the sanitized text
+    for i, block in enumerate(code_blocks):
+        sanitized_text = sanitized_text.replace(f"CODE_BLOCK_{i}_PLACEHOLDER", block)
+    
+    return sanitized_text

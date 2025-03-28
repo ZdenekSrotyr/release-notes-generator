@@ -56,15 +56,30 @@ def generate_ai_description(openai_client, repo_name, previous_tag, current_tag,
         
         {changes_list}
         
-        Provide a concise technical summary focusing on the most significant changes.
-        Focus on what was changed, added, fixed, or improved. Keep it under 150 words.
+        Keep it under 150 words.
+        Provide a concise technical summary focusing on the most significant program logic changes.
+        Ignore Added or deleted files!
+         
+        The post should contain following sections:
+
+        Title (this is also displayed in in platform notifications)
+        It should be short, poignant and concise. Ideally attracting attention for click.
+        Excerpt - a short sentence that describes what is the feature about.
+        It should be short and capture the main announcement of the feature.
+        It is also displayed in the detail of the post, so it should not duplicate with the initial sentence in the detail. Rather, it should summarise the post detail
+        Post detail
+        These are couple of paragraphs describing what the feature is about.
+        It should not be too chatty, but capture the main features and pointing out the value.
+        It should be catchy, but not overly informal.
         """
 
         # Make the API call
         response = openai_client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=[
-                {"role": "system", "content": "You are a technical writer summarizing software changes."},
+                {"role": "system", "content": "You are a technical writer summarizing software changes. "
+                                              "You are tasked with writing concise 'changelog' posts. "
+                                              "Changelog posts announce new features and functionalities in our (Keboola) platform."},
                 {"role": "user", "content": prompt}
             ],
             max_tokens=300,

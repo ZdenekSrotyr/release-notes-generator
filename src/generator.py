@@ -23,7 +23,7 @@ class ReleaseNotesGenerator:
         self.organization = "keboola"  # Organization is set as a constant
 
         # Detect time period from last run or use default of 30 days
-        self.start_date, self.end_date = detect_time_period_from_last_run(days=30)
+        self.start_date, self.end_date = detect_time_period_from_last_run(days=60)
         logger.info(
             f"Using date range: {self.start_date.strftime('%Y-%m-%d')} to {self.end_date.strftime('%Y-%m-%d')}")
 
@@ -120,8 +120,8 @@ class ReleaseNotesGenerator:
         component_jobs = []
 
         for repo in repos:
-            #if repo.name !="component-delta-lake":
-            #    continue
+            if repo.name !="component-zendesk-wr":
+                continue
             component_names = get_component_name(repo)
             logger.info(f"Found component names for {repo.name}: {component_names}")
 
@@ -230,8 +230,8 @@ class ReleaseNotesGenerator:
                     'component_name': component_name,
                     'component_details': component_details,
                     'tag_name': tag['name'],
-                    'tag_url': f"https://github.com/{repo.full_name}/releases/tag/{tag['name']}",
                     'changes': change_data['changes'],
+                    'tag_url': f"https://github.com/{repo.full_name}/releases/tag/{tag['name']}",
                     'ai_description': change_data['ai_description'],
                     'previous_tag': previous_tag['name'],
                     'component_stage': component_stage

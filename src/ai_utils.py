@@ -52,14 +52,20 @@ def generate_ai_description(openai_client, repo_name, previous_tag, current_tag,
 
         # Create the prompt
         prompt = f"""
-        Summarize the following changes in the {repo_name} repository between tags {previous_tag} and {current_tag}:
+        Summarize the following functional changes in the {repo_name} repository between tags {previous_tag} and {current_tag}:
         
         {changes_list}
         
         Keep it under 150 words.
-        Provide a concise technical summary focusing on the most significant program logic changes.
-        Ignore Added or deleted files!
-         
+        Focus ONLY on changes that affect functionality and user experience.
+        Ignore:
+        - Build script changes
+        - Pipeline configurations
+        - Infrastructure changes
+        - Documentation updates
+        - Configuration file changes
+        - Docker-related changes
+        
         The post should contain following sections:
 
         Title (this is also displayed in in platform notifications)

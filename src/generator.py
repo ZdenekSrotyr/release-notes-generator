@@ -54,30 +54,31 @@ class ReleaseNotesGenerator:
         try:
             # Sort tags by date (newest first)
             sorted_tags = sorted(all_tags, key=lambda t: t['date'], reverse=True)
-            
+
             # Try to find semantically similar tag first (from same version family)
             same_family_tags = []
-            
+
             # Check if the tag looks like semantic versioning (vX.Y.Z or X.Y.Z)
             version_match = re.match(r'(v?\d+\.\d+)', tag_name)
             if version_match:
                 # Get the family prefix (e.g., v1.2 or 1.2)
                 version_family = version_match.group(1)
                 logger.info(f"Looking for previous tag in version family {version_family} for tag {tag_name}")
-                
+
                 # Find all tags from the same family
                 for t in sorted_tags:
                     if t['name'] != tag_name and t['date'] < tag_date and t['name'].startswith(version_family):
                         same_family_tags.append(t)
-                
+
                 # Return the most recent tag from the same family
                 if same_family_tags:
-                    logger.info(f"Found semantic previous tag from same family: {same_family_tags[0]['name']} for tag {tag_name}")
+                    logger.info(
+                        f"Found semantic previous tag from same family: {same_family_tags[0]['name']} for tag {tag_name}")
                     return same_family_tags[0]
-            
+
             # If no semantic match found, fall back to chronological order
             logger.info(f"No semantic previous tag found for {tag_name}, falling back to chronological order")
-            
+
             for t in sorted_tags:
                 if t['date'] < tag_date and t['name'] != tag_name:
                     logger.info(f"Found chronological previous tag: {t['name']} for tag {tag_name}")
@@ -99,7 +100,7 @@ class ReleaseNotesGenerator:
             except Exception as e:
                 logger.warning(f"Error finding initial commit: {e}")
                 # Continue to fallback
-            
+
             # Return fallback if no tag or commit was found
             logger.info(f"No previous tag or initial commit found for {tag_name}, using fallback")
             return fallback
@@ -120,7 +121,7 @@ class ReleaseNotesGenerator:
         component_jobs = []
 
         for repo in repos:
-            #if repo.name !="component-zendesk-wr":
+            #if repo.name != "component-zendesk-wr":
             #    continue
             component_names = get_component_name(repo)
             logger.info(f"Found component names for {repo.name}: {component_names}")

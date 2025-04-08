@@ -13,7 +13,7 @@ project_root = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, project_root)
 
 # Import from src
-from src.config import GITHUB_TOKEN, logger, RELEASE_NOTES_DIR
+from src.config import GH_TOKEN, logger, RELEASE_NOTES_DIR
 from src.generator import ReleaseNotesGenerator
 from src.slack_utils import send_slack_message
 
@@ -37,12 +37,12 @@ def setup_environment():
     os.makedirs(RELEASE_NOTES_DIR, exist_ok=True)
 
     # Check GitHub token if we need it
-    if not GITHUB_TOKEN:
-        logger.error("GitHub token not provided. Set GITHUB_TOKEN environment variable.")
+    if not GH_TOKEN:
+        logger.error("GitHub token not provided. Set GH_TOKEN environment variable.")
         sys.exit(1)
 
     # Date range will be automatically determined in the ReleaseNotesGenerator class
-    return GITHUB_TOKEN
+    return GH_TOKEN
 
 
 def mark_as_notified(file_path):

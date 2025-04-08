@@ -14,8 +14,7 @@ def initialize_github_client(token):
             token,
             retry=3,  # Number of retries
             per_page=100,  # Maximum items per page
-            timeout=30,  # Timeout in seconds
-            retry_on_exceptions=(403, 429, 500, 502, 503, 504)  # Retry on these status codes
+            timeout=30  # Timeout in seconds
         )
         return github
     except Exception as e:

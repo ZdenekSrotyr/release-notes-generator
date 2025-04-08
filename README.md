@@ -111,14 +111,21 @@ The tool supports automatic generation of change summaries using artificial inte
 3. No additional parameters are needed - the feature is automatically enabled when the API key is detected
 
 **Benefits of AI Summarization:**
-- Creates concise and clear summaries of technical changes (max. 150 words)
-- Identifies and highlights the most important changes in the release
-- Complements the detailed list of changes with a quick overview for better understanding
-- Facilitates rapid comprehension of the essence of a new release
+- Creates concise and factual summaries of technical changes
+- Focuses on changes that affect data processing and user experience
+- Completely ignores internal changes (CI/CD, docs, tests, builds)
+- Matches the length of the summary to the significance of changes
+- Provides clear, technical information without marketing language
 
 **Technical Details:**
-- Uses the GPT-3.5 Turbo model from OpenAI
-- Analyzes commit and PR titles
+- Uses the GPT-4 model from OpenAI
+- Analyzes code changes directly from GitHub comparison
+- Focuses on:
+  - Changes in data processing
+  - Changes in data output
+  - Error handling changes
+  - Configuration changes
+  - Component behavior changes
 - The result is displayed in the "AI Summary" section in the release notes
 
 ## GitHub Actions

@@ -10,7 +10,7 @@ from src.github_utils import initialize_github_client, get_repositories, get_tag
     fix_timezone, get_repo_tags
 from src.component_utils import get_component_name, load_component_details, determine_component_stage
 from src.template_utils import detect_time_period_from_last_run, save_component_release_note
-from src.ai_utils import initialize_openai_client, generate_ai_description
+from src.ai_utils import initialize_google_ai_client, generate_ai_description
 
 
 class ReleaseNotesGenerator:
@@ -27,8 +27,8 @@ class ReleaseNotesGenerator:
         logger.info(
             f"Using date range: {self.start_date.strftime('%Y-%m-%d')} to {self.end_date.strftime('%Y-%m-%d')}")
 
-        # Initialize OpenAI client - will be None if API key is not available
-        self.openai_client = initialize_openai_client()
+        # Initialize Google AI client - will be None if API key is not available
+        self.google_ai_model = initialize_google_ai_client()
 
         # Initialize tracking for new releases
         self.new_releases = []
@@ -121,7 +121,7 @@ class ReleaseNotesGenerator:
         component_jobs = []
 
         for repo in repos:
-            #if repo.name != "component-zendesk-wr": #repo.name != "component-hubspot-v2": #
+            #if repo.name != "component-zendesk-wr": #repo.name != "python-cdc-component":  # repo.name != "component-zendesk-wr": #repo.name != "component-hubspot-v2": #
             #    continue
             component_names = get_component_name(repo)
             logger.info(f"Found component names for {repo.name}: {component_names}")
@@ -206,18 +206,18 @@ class ReleaseNotesGenerator:
 
                 # Generate AI description if enabled
                 ai_description = None
-                if self.openai_client and change_data['changes']:
+                if self.google_ai_model and change_data['changes']:
                     ai_description = generate_ai_description(
-                        self.openai_client,
+                        self.google_ai_model,
                         repo.name,
                         previous_tag['name'],
                         tag['name'],
                         change_data['changes']
                     )
-                    # If ai_description failed and returned None, disable the client for future tags
-                    if ai_description is None and self.openai_client is not None:
+                    # If ai_description failed and returned None, disable the model for future tags
+                    if ai_description is None and self.google_ai_model is not None:
                         logger.info("AI description generation failed - disabling for subsequent tags")
-                        self.openai_client = None
+                        self.google_ai_model = None
 
                 # Add the AI description to the change data
                 change_data['ai_description'] = ai_description

@@ -41,15 +41,14 @@ def fix_timezone(date):
     return date
 
 
-def get_repo_tags(repo, max_count=50):
+def get_repo_tags(repo, max_count=10):
     """Get the most recent tags for a repository (limited to max_count)."""
     logger.info(f"Fetching {max_count} most recent tags for {repo.name}")
 
     all_tags = []
     tag_count = 0
-
     try:
-        for tag in repo.get_tags():
+        for tag in sorted(repo.get_tags(), key=lambda x: x.commit.commit.author.date, reverse=True):
             try:
                 # Get tag commit date
                 commit_date = fix_timezone(tag.commit.commit.author.date)
@@ -76,9 +75,6 @@ def get_repo_tags(repo, max_count=50):
 
     except Exception as e:
         logger.error(f"Error getting tags for {repo.name}: {e}")
-
-    # Sort tags by date (newest first)
-    all_tags.sort(key=lambda x: x['date'], reverse=True)
 
     logger.info(f"Fetched {len(all_tags)} tags for {repo.name}")
     return all_tags

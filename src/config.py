@@ -17,9 +17,9 @@ KEBOOLA_STORAGE_API_URL = "https://connection.keboola.com/v2/storage"
 # Slack Configuration
 SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL")
 
-# OpenAI Configuration
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-OPENAI_MODEL = "gpt-3.5-turbo"
+# Google AI Configuration
+GOOGLE_AI_API_KEY = os.environ.get("GOOGLE_AI_API_KEY")
+GOOGLE_AI_MODEL = "gemini-2.5-pro-preview-03-25"
 
 # Logging Configuration
 logging.basicConfig(

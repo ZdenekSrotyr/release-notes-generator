@@ -104,9 +104,9 @@ The tool uses environment detection to enable features:
 
 ## AI Summary
 
-The tool supports automatic generation of change summaries using artificial intelligence (OpenAI):
+The tool supports automatic generation of change summaries using artificial intelligence (GEMINI):
 
-1. To use this feature, set the `OPENAI_API_KEY` environment variable with a valid OpenAI API key
+1. To use this feature, set the `GOOGLE_AI_API_KEY` environment variable with a valid Google AI API key
 2. A summary of changes between tags will be automatically generated
 3. No additional parameters are needed - the feature is automatically enabled when the API key is detected
 
@@ -118,7 +118,7 @@ The tool supports automatic generation of change summaries using artificial inte
 - Provides clear, technical information without marketing language
 
 **Technical Details:**
-- Uses the GPT-4 model from OpenAI
+- Uses the Gemini 2.5 pro model from Google
 - Analyzes code changes directly from GitHub comparison
 - Focuses on:
   - Changes in data processing

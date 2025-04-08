@@ -121,8 +121,8 @@ class ReleaseNotesGenerator:
         component_jobs = []
 
         for repo in repos:
-            if repo.name != "component-zendesk-wr": #repo.name != "component-hubspot-v2": #
-                continue
+            #if repo.name != "component-zendesk-wr": #repo.name != "component-hubspot-v2": #
+            #    continue
             component_names = get_component_name(repo)
             logger.info(f"Found component names for {repo.name}: {component_names}")
 

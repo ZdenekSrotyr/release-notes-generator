@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import datetime
 import re
-import time
 from github import Github
 from src.config import GITHUB_ORGANIZATION, REPO_PATTERNS, logger
 
@@ -9,13 +8,7 @@ from src.config import GITHUB_ORGANIZATION, REPO_PATTERNS, logger
 def initialize_github_client(token):
     """Initialize GitHub client with the provided token."""
     try:
-        # Add retry mechanism with exponential backoff
-        github = Github(
-            token,
-            retry=3,  # Number of retries
-            per_page=100,  # Maximum items per page
-            timeout=30  # Timeout in seconds
-        )
+        github = Github(token, retry=None)
         return github
     except Exception as e:
         logger.error(f"Error initializing GitHub client: {e}")
@@ -56,18 +49,16 @@ def get_repo_tags(repo, max_count=50):
     tag_count = 0
 
     try:
-        # Use pagination to handle rate limits better
-        for tag in repo.get_tags().get_page(0):
+        for tag in repo.get_tags():
             try:
-                # Get both commit date and tag creation date
+                # Get tag commit date
                 commit_date = fix_timezone(tag.commit.commit.author.date)
-                tag_date = fix_timezone(tag.commit.commit.committer.date)
 
                 # Create tag object with all necessary information
                 tag_obj = {
                     'name': tag.name,
                     'commit': tag.commit.sha,
-                    'date': max(commit_date, tag_date),  # Use the later date
+                    'date': commit_date,
                     'message': tag.commit.commit.message,
                     'url': tag.commit.html_url
                 }
@@ -82,19 +73,9 @@ def get_repo_tags(repo, max_count=50):
 
             except Exception as e:
                 logger.warning(f"Error processing tag {tag.name} in {repo.name}: {e}")
-                # If we hit rate limit, wait and retry
-                if "API rate limit exceeded" in str(e):
-                    logger.info("Rate limit hit, waiting 60 seconds...")
-                    time.sleep(60)
-                    continue
 
     except Exception as e:
         logger.error(f"Error getting tags for {repo.name}: {e}")
-        # If we hit rate limit, wait and retry
-        if "API rate limit exceeded" in str(e):
-            logger.info("Rate limit hit, waiting 60 seconds...")
-            time.sleep(60)
-            return get_repo_tags(repo, max_count)  # Retry the whole function
 
     # Sort tags by date (newest first)
     all_tags.sort(key=lambda x: x['date'], reverse=True)
@@ -115,88 +96,97 @@ def get_tags_in_period(repo, start_date, end_date):
     # Regex for matching semantic versions (e.g. 1.2.3)
     semver_pattern = re.compile(r'^v?\d+\.\d+\.\d+(-.*)?$')
 
-    # Get recent tags without caching (increased to 100 tags)
-    all_tags = get_repo_tags(repo, max_count=100)
+    # Get recent tags without caching (default: 50 tags)
+    all_tags = get_repo_tags(repo)
 
     # Filter tags by date and semantic versioning
-    filtered_tags = []
+    tags_in_period = []
+
     for tag in all_tags:
-        # Check if tag is within the date range
+        # Skip if tag doesn't match semantic versioning
+        if not semver_pattern.match(tag['name']):
+            continue
+
+        # Check if the tag is within our date range
         if start_date <= tag['date'] <= end_date:
-            # Check if tag follows semantic versioning
-            if semver_pattern.match(tag['name']):
-                filtered_tags.append(tag)
-            else:
-                logger.debug(f"Skipping non-semantic version tag: {tag['name']}")
+            tags_in_period.append(tag)
 
-    # Sort tags by date (newest first)
-    filtered_tags.sort(key=lambda x: x['date'], reverse=True)
-
-    # Verify that tags have changes between them
-    valid_tags = []
-    for i in range(len(filtered_tags)):
-        current_tag = filtered_tags[i]
-        if i < len(filtered_tags) - 1:
-            previous_tag = filtered_tags[i + 1]
-            try:
-                # Check if there are any changes between tags
-                changes = get_changes_between_tags(repo, previous_tag['name'], current_tag['name'])
-                if changes:
-                    valid_tags.append(current_tag)
-                    logger.info(f"Found valid tag {current_tag['name']} with changes")
-                else:
-                    logger.info(f"Skipping tag {current_tag['name']} - no changes found")
-            except Exception as e:
-                logger.warning(f"Error checking changes for tag {current_tag['name']}: {e}")
-        else:
-            valid_tags.append(current_tag)
-
-    logger.info(f"Found {len(valid_tags)} valid tags for {repo.name}")
-    return valid_tags
+    logger.info(f"Found {len(tags_in_period)} tags in period for {repo.name}")
+    return tags_in_period
 
 
 def get_changes_between_tags(repo, previous_tag, current_tag):
     """Get changes between two tags."""
-    logger.info(f"Getting changes between {previous_tag} and {current_tag} in {repo.name}")
+    logger.info(f"Getting changes between {previous_tag['name']} and {current_tag['name']} in {repo.name}")
+
+    # Initialize result
+    result = {
+        'changes': [],
+        'ai_description': None
+    }
 
     try:
-        # Add delay between API calls to avoid rate limits
-        time.sleep(1)  # 1 second delay between calls
+        # Get comparison between tags
+        comparison = repo.compare(previous_tag['commit'], current_tag['commit'])
 
-        comparison = repo.compare(previous_tag, current_tag)
+        # Get commits
         commits = comparison.commits
 
-        # Process commits in batches to avoid rate limits
-        batch_size = 10
-        changes = []
-        for i in range(0, len(commits), batch_size):
-            batch = commits[i:i + batch_size]
-            for commit in batch:
-                # Extract PR number and title from commit message
-                pr_match = re.search(r'Merge pull request #(\d+)', commit.commit.message)
-                if pr_match:
-                    pr_number = pr_match.group(1)
-                    pr_title = commit.commit.message.split('\n')[1] if len(commit.commit.message.split('\n')) > 1 else f"PR #{pr_number}"
-                    changes.append({
-                        'title': pr_title,
-                        'pr_number': pr_number,
-                        'pr_url': f"https://github.com/{repo.full_name}/pull/{pr_number}",
-                        'commit_sha': commit.sha,
-                        'commit_url': commit.html_url,
-                        'author': commit.commit.author.name,
-                        'date': fix_timezone(commit.commit.author.date)
-                    })
-            # Add delay between batches
-            if i + batch_size < len(commits):
-                time.sleep(1)
+        # Process each commit
+        for commit in commits:
+            # Check if commit is a pull request merge
+            pr_number = None
+            pr_title = None
 
-        return changes
+            # Look for PR reference in commit message
+            merge_match = re.search(r'Merge pull request #(\d+)', commit.commit.message)
+            if merge_match:
+                pr_number = merge_match.group(1)
+
+                # Extract the PR title from the commit message (usually after the first line)
+                message_lines = commit.commit.message.strip().split('\n')
+                if len(message_lines) > 1:
+                    pr_title = message_lines[1].strip()
+
+            # Create change entry
+            change = {
+                'commit_sha': commit.sha,
+                'commit_url': commit.html_url,
+                'commit_message': commit.commit.message,
+                'author': commit.commit.author.name,
+                'date': fix_timezone(commit.commit.author.date)
+            }
+
+            # Add PR info if available
+            if pr_number:
+                change['pr_number'] = pr_number
+                change['pr_url'] = f"https://github.com/{repo.full_name}/pull/{pr_number}"
+                change['title'] = pr_title if pr_title else f"PR #{pr_number}"
+            else:
+                change['title'] = commit.commit.message.split('\n')[0]
+
+            # Add to changes list
+            result['changes'].append(change)
+
+        # Remove duplicates (sometimes the same PR can appear twice)
+        unique_changes = []
+        seen_prs = set()
+
+        for change in result['changes']:
+            # If it's a PR and we've seen it, skip
+            if 'pr_number' in change and change['pr_number'] in seen_prs:
+                continue
+
+            # If it's a PR, mark as seen
+            if 'pr_number' in change:
+                seen_prs.add(change['pr_number'])
+
+            # Add to unique changes
+            unique_changes.append(change)
+
+        result['changes'] = unique_changes
 
     except Exception as e:
         logger.error(f"Error getting changes between tags: {e}")
-        # If we hit rate limit, wait and retry
-        if "API rate limit exceeded" in str(e):
-            logger.info("Rate limit hit, waiting 60 seconds...")
-            time.sleep(60)
-            return get_changes_between_tags(repo, previous_tag, current_tag)  # Retry the whole function
-        return []
+
+    return result

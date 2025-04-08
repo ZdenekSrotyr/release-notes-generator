@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import logging
+
 from openai import OpenAI
 from src.config import logger, OPENAI_MODEL, OPENAI_API_KEY
 
@@ -39,77 +41,97 @@ def initialize_openai_client():
 
 
 def generate_ai_description(openai_client, repo_name, previous_tag, current_tag, changes):
-    """Generate an AI description of the changes between tags."""
-    if not openai_client:
-        return None
-
+    """Generate AI description for release notes."""
     try:
         # Format the changes as a readable list
-        changes_list = ""
-        for change in changes:
-            if 'title' in change:
-                changes_list += f"- {change['title']}\n"
+        changes_list = "\n".join([f"- {change}" for change in changes])
+        
+        # Create GitHub comparison URL
+        github_compare_url = f"https://github.com/keboola/{repo_name}/compare/{previous_tag}...{current_tag}"
 
-        # Create the prompt
-        prompt = f"""
-        Summarize the following functional changes in the {repo_name} repository between tags {previous_tag} and {current_tag}:
-        
-        {changes_list}
-        
-        Keep it under 150 words.
-        Focus ONLY on changes that affect functionality and user experience.
-        Ignore:
-        - Build script changes
-        - Pipeline configurations
-        - Infrastructure changes
-        - Documentation updates
-        - Configuration file changes
-        - Docker-related changes
-        
-        The post should contain following sections:
+        # Phase 1: Analyze changes
+        analysis_prompt = f"""
+        Analyze code changes in {github_compare_url}. Focus ONLY on changes that affect data processing.
 
-        Title (this is also displayed in in platform notifications)
-        It should be short, poignant and concise. Ideally attracting attention for click.
-        Excerpt - a short sentence that describes what is the feature about.
-        It should be short and capture the main announcement of the feature.
-        It is also displayed in the detail of the post, so it should not duplicate with the initial sentence in the detail. Rather, it should summarise the post detail
-        Post detail
-        These are couple of paragraphs describing what the feature is about.
-        It should not be too chatty, but capture the main features and pointing out the value.
-        It should be catchy, but not overly informal.
+        CRITICAL: Only include changes that:
+        - Change how data is processed
+        - Change what data is output
+        - Change how errors are handled
+        - Add/remove configuration options
+        - Change component behavior
+
+        IGNORE:
+        - CI/CD, docs, tests, builds
+        - Internal scripts
+        - Developer portal
+        - Commit authors and timestamps
+
+        Available info:
+        - Changes: {changes_list}
+        - Compare URL: {github_compare_url}
+
+        Output format:
+        1. DATA CHANGES:
+           - What changed
+           - File and location
+           - Impact on data
+           Example: "Removed column swap - data order unchanged"
+
+        2. OTHER CHANGES:
+           - What changed
+           - File
+           - Impact
+
+        Be factual. Only include verified changes. Do not include commit authors or timestamps.
         """
 
-        # Make the API call
-        response = openai_client.chat.completions.create(
-            model=OPENAI_MODEL,
+        # Get analysis from GPT-4
+        analysis_response = openai_client.chat.completions.create(
+            model="gpt-4",
             messages=[
-                {"role": "system", "content": "You are a technical writer summarizing software changes. "
-                                              "You are tasked with writing concise 'changelog' posts. "
-                                              "Changelog posts announce new features and functionalities in our (Keboola) platform."},
-                {"role": "user", "content": prompt}
+                {"role": "system", "content": "You are a data change analyzer. Your job is to identify changes that affect data processing. Ignore internal changes and commit metadata. Be precise and factual."},
+                {"role": "user", "content": analysis_prompt}
             ],
-            max_tokens=300,
+            max_tokens=500,
+            temperature=0.3
+        )
+        
+        analysis = analysis_response.choices[0].message.content
+
+        # Phase 2: Generate release notes
+        writing_prompt = f"""
+        Write release notes based on this analysis:
+        {analysis}
+
+        Format:
+        Title: [Most important data change]
+        
+        Excerpt: [One line about data impact]
+        
+        Post detail: [Just the facts about data changes]
+
+        Rules:
+        - Be brief and factual
+        - Match length to significance of changes
+        - No marketing language
+        - No internal changes
+        - No assumptions
+        - Do not include commit authors or timestamps
+        """
+
+        # Generate release notes with GPT-4
+        response = openai_client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are a technical writer. Write brief, factual release notes. Match length to significance. No marketing language. Do not include commit metadata."},
+                {"role": "user", "content": writing_prompt}
+            ],
+            max_tokens=500,
             temperature=0.5
         )
 
-        # Extract and return the AI description
-        ai_description = response.choices[0].message.content.strip()
-        logger.info(f"Generated AI description for {repo_name} {current_tag}")
-        return ai_description
+        return response.choices[0].message.content
 
     except Exception as e:
-        error_msg = str(e)
-        # Check for specific errors
-        if "401" in error_msg or "unauthorized" in error_msg.lower():
-            logger.error(f"Error generating AI description - authentication issue: {e}")
-            # Disable the client for future calls to prevent repeated errors
-            logger.info("Disabling OpenAI client for remaining operations due to authentication issues")
-            return None
-        elif "organization" in error_msg.lower():
-            logger.error(f"Error generating AI description - organization access issue: {e}")
-            # Disable the client for future calls to prevent repeated errors
-            logger.info("Disabling OpenAI client for remaining operations due to organization access issues")
-            return None
-        else:
-            logger.error(f"Error generating AI description: {e}")
+        print(f"Error generating AI description: {str(e)}")
         return None

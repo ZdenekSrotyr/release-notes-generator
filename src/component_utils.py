@@ -221,6 +221,6 @@ def determine_component_stage(component_details):
     elif "appInfo.beta" in flags:
         return "BETA"
     elif "excludeFromNewList" in flags:
-        return "HIDDEN"
+        return "ALPHA"
     else:
         return "GA"

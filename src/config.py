@@ -5,7 +5,7 @@ import logging
 # GitHub Configuration
 GITHUB_ORGANIZATION = "keboola"
 REPO_PATTERNS = "component"
-GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
+GITHUB_TOKEN = os.environ.get("GH_TOKEN")
 
 # Directory and File Paths
 TEMPLATE_DIR = "templates"

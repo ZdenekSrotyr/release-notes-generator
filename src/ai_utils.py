@@ -71,10 +71,10 @@ def generate_ai_description(google_ai_model, repo_name, previous_tag, current_ta
 
         # Phase 2: Generate release notes
         writing_prompt = f"""
-        Changelog posts announce new features and functionalities in our (Keboola) platform. 
+        Changelog posts announce new features and functionalities in our (Keboola) platform.
         Write concise "changelog" posts based on these changes:
         {analysis}
-         
+
         The post should contain following sections:
         - Title (this is also displayed in in platform notifications)
           - It should be short, poignant and concise. Ideally attracting attention for click.
@@ -91,6 +91,10 @@ def generate_ai_description(google_ai_model, repo_name, previous_tag, current_ta
         - Do not include any introductory or closing comments
         - Do not include markdown formatting instructions
         - Do not use code blocks or markdown formatting
+        - **Be concise and strictly factual:** Describe only the changes provided in the analysis.
+        - **Avoid embellishment or marketing language:** Keep the tone professional and informative.
+        - **Do not speculate or invent usage examples:** Stick only to the confirmed changes and their direct impact.
+        - **Focus on the *what* and *why* of the change, not generic benefits.**
 
         Try to match the style and structure based on the bellow examples:
         # Title and excerpt examples

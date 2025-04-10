@@ -74,7 +74,17 @@ def generate_ai_description(google_ai_model, repo_name, previous_tag, current_ta
         Changelog posts announce new features and functionalities in our (Keboola) platform.
         Write concise "changelog" posts based on these changes:
         {analysis}
-
+        
+        Rules:
+        - Start directly with the content
+        - Do not include any introductory or closing comments
+        - Do not include markdown formatting instructions
+        - Do not use code blocks or markdown formatting
+        - Be concise and strictly factual
+        - Describe only the changes provided in the analysis
+        - Do not speculate or invent usage examples
+        - Stick only to the confirmed changes and their direct impact
+        
         The post should contain following sections:
         - Title (this is also displayed in in platform notifications)
           - It should be short, poignant and concise. Ideally attracting attention for click.
@@ -85,33 +95,6 @@ def generate_ai_description(google_ai_model, repo_name, previous_tag, current_ta
           - These are couple of paragraphs describing what the feature is about.
           - It should not be too chatty, but capture the main features and pointing out the value.
           - It should be catchy, but not overly informal.
-
-        Rules:
-        - Start directly with the content
-        - Do not include any introductory or closing comments
-        - Do not include markdown formatting instructions
-        - Do not use code blocks or markdown formatting
-        - Be concise and strictly factual
-        - Describe only the changes provided in the analysis
-        - Do not speculate or invent usage examples
-        - Stick only to the confirmed changes and their direct impact
-
-        Try to match the style and structure based on the amount of changes and the bellow examples:
-        # Title and excerpt examples
-        ---
-        ## Buffer API Deprecation & Migration to Data Streams
-        We are announcing the deprecation of the Buffer API and encouraging users to migrate to the new Data Streams feature for improved performance and reliability.
-        ---
-        ## Faster, Smarter CDC Components—MySQL CDC Connector Now Generally Available
-        Our MySQL Change Data Capture (CDC) component is moving to General Availability (GA), featuring column masks, filters, resumable snapshots, and improved performance for faster, more reliable data replication.
-        ### New Features:
-        - **Resumable Snapshots:** Enhances resiliency with partially resumable snapshots, allowing the connector to recover from failures during the snapshot process. If a failure occurs, progress is saved, and the process resumes from the last known position. The smallest resumable unit is a table. In Append Mode, duplicates may occur, requiring downstream handling.
-        - **Column Masks:**
-          - **Length Mask:** Replaces string values with `*` characters, masking the data length.
-          - **Hash Mask:** Hashes string data using algorithms such as SHA-256, ensuring data privacy while preserving referential integrity.
-        - **Column Filters:** Easily include or exclude specific columns in the CDC process using regex-based filtering.
-        - **Debezium Upgrade:** We have upgraded to the newest version of Debezium.
-        We look forward to your feedback as you explore these enhancements!
         """
 
         # Generate release notes with Gemini

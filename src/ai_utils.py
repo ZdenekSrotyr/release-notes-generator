@@ -1,17 +1,27 @@
 #!/usr/bin/env python3
-import google.generativeai as genai
-from src.config import logger, GOOGLE_AI_MODEL, GOOGLE_AI_API_KEY
+try:
+    import google.generativeai as genai
+    GOOGLE_AI_AVAILABLE = True
+except ImportError:
+    GOOGLE_AI_AVAILABLE = False
+    genai = None
+
+from src.config import logger, GOOGLE_AI_MODEL
 
 
-def initialize_google_ai_client():
+def initialize_google_ai_client(api_key=None):
     """Initialize Google AI client if API key is available."""
-    if not GOOGLE_AI_API_KEY:
+    if not GOOGLE_AI_AVAILABLE:
+        logger.info("Google AI library not available - AI summaries disabled")
+        return None
+        
+    if not api_key:
         logger.info("Google AI API key not provided - AI summaries disabled")
         return None
 
     try:
         # Configure the API key
-        genai.configure(api_key=GOOGLE_AI_API_KEY)
+        genai.configure(api_key=api_key)
 
         # Create a model instance
         model = genai.GenerativeModel(GOOGLE_AI_MODEL)

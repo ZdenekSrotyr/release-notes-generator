@@ -1,123 +1,84 @@
 #!/usr/bin/env python3
 """
-Main script for generating release notes.
+Main script for generating release notes in Keboola environment.
 """
 import os
 import sys
-import argparse
-import glob
-import datetime
+import traceback
+from keboola.component import CommonInterface
 
 # Add the project root directory to the Python path
 project_root = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, project_root)
 
 # Import from src
-from src.config import GH_TOKEN, logger, RELEASE_NOTES_DIR
+from src.config import logger
 from src.generator import ReleaseNotesGenerator
-from src.slack_utils import send_slack_message
-
-
-def parse_args():
-    """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description="Generate release notes for Keboola components.")
-
-    # Add parameters
-    parser.add_argument("--slack", action="store_true",
-                        help="Send Slack notification for new releases")
-    parser.add_argument("--notify-only", action="store_true",
-                        help="Only send notifications for existing releases, don't generate new ones")
-
-    return parser.parse_args()
-
-
-def setup_environment():
-    """Setup environment and validate required configurations."""
-    # Create release notes directory if it doesn't exist
-    os.makedirs(RELEASE_NOTES_DIR, exist_ok=True)
-
-    # Check GitHub token if we need it
-    if not GH_TOKEN:
-        logger.error("GitHub token not provided. Set GH_TOKEN environment variable.")
-        sys.exit(1)
-
-    # Date range will be automatically determined in the ReleaseNotesGenerator class
-    return GH_TOKEN
-
-
-def mark_as_notified(file_path):
-    """Mark a file as having been notified about."""
-    try:
-        # Create a marker file to indicate this release note has been sent to Slack
-        with open(f"{file_path}.notified", 'w') as f:
-            f.write(datetime.datetime.now().isoformat())
-        logger.info(f"Marked {file_path} as notified")
-        return True
-    except Exception as e:
-        logger.error(f"Error marking {file_path} as notified: {e}")
-        return False
-
-
-def notify_pending_releases():
-    """Send notifications for pending releases - simply send the markdown content of each file."""
-    logger.info("Looking for pending release notes to notify about")
-
-    # Get all release note files
-    all_files = glob.glob(f"{RELEASE_NOTES_DIR}/*.md")
-    pending_files = [f for f in all_files if not os.path.exists(f"{f}.notified")]
-
-    if not pending_files:
-        logger.info("No pending releases to notify about")
-        return False
-
-    logger.info(f"Found {len(pending_files)} pending release notes to notify about")
-    success_count = 0
-
-    # Process each file individually
-    for file_path in pending_files:
-        try:
-            # Read file content
-            with open(file_path, 'r') as f:
-                content = f.read()
-
-            # Send notification with the file content
-            if send_slack_message(content):
-                # If successful, mark it as notified immediately
-                if mark_as_notified(file_path):
-                    success_count += 1
-        except Exception as e:
-            logger.error(f"Error sending notification for {file_path}: {e}")
-
-    logger.info(f"Successfully sent and marked {success_count} of {len(pending_files)} notifications")
-    return success_count > 0
+from src.config import load_configuration, validate_configuration
 
 
 def main():
-    """Main function."""
-    args = parse_args()
+    """Main function for Keboola component."""
+    logger.info("Starting Release Notes Generator")
+    logger.info(f"Current working directory: {os.getcwd()}")
+    logger.info(f"Python path: {sys.path[:3]}...")  # Show first 3 paths
 
-    # If only sending notifications for existing release notes
-    if args.notify_only:
-        logger.info("Running in notify-only mode")
-        notify_pending_releases()
-        return
+    try:
+        # Check if we're in Keboola environment
+        if 'KBC_DATADIR' in os.environ:
+            logger.info("Detected Keboola environment")
+            ci = CommonInterface()
+        else:
+            logger.info("Running in local environment - using data/ directory")
+            # For local testing, use the data directory
+            data_dir = os.path.join(project_root, 'data')
+            if not os.path.exists(data_dir):
+                logger.error(f"Data directory not found: {data_dir}")
+                logger.info("Please create data/ directory with config.json for local testing")
+                sys.exit(1)
 
-    # Setup environment
-    github_token = setup_environment()
+            # Set environment variable for CommonInterface
+            os.environ['KBC_DATADIR'] = data_dir
+            ci = CommonInterface()
 
-    # Create generator - all time period detection is handled internally
-    generator = ReleaseNotesGenerator(
-        github_token=github_token
-    )
+        logger.info("Keboola CommonInterface initialized successfully")
+        logger.info(f"Data directory: {ci.data_folder_path}")
 
-    # Generate release notes
-    generator.generate_timeline()
+        # Debug: Check what files exist in data directory
+        logger.info(f"Files in data directory:")
+        for root, dirs, files in os.walk(ci.data_folder_path):
+            for file in files:
+                logger.info(f"  {os.path.join(root, file)}")
 
-    # Send Slack notification if requested
-    if args.slack:
-        notify_pending_releases()
+        # Debug: Check configuration object
+        logger.info(f"Configuration object: {ci.configuration}")
+        logger.info(
+            f"Configuration parameters: {ci.configuration.parameters if hasattr(ci.configuration, 'parameters') else 'No parameters attribute'}")
 
-    logger.info("Done!")
+        # Load and validate configuration
+        logger.info("Loading configuration...")
+        config = load_configuration(ci)
+        logger.info("Configuration loaded successfully")
+
+        if not validate_configuration(config):
+            logger.error("Configuration validation failed")
+            sys.exit(1)
+
+        # Create generator
+        logger.info("Creating ReleaseNotesGenerator...")
+        generator = ReleaseNotesGenerator(config.github_token, ci)
+
+        # Generate timeline
+        logger.info("Starting release notes generation...")
+        releases = generator.generate_timeline()
+
+        logger.info(f"Processing completed. Generated {len(releases)} new release notes.")
+
+    except Exception as e:
+        logger.error(f"Error during processing: {e}")
+        logger.error(f"Full traceback:")
+        logger.error(traceback.format_exc())
+        sys.exit(1)
 
 
 if __name__ == "__main__":

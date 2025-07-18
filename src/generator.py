@@ -2,53 +2,73 @@
 import os
 import datetime
 import concurrent.futures
-from typing import Any
+from typing import Any, List
 import re
 
 from src.config import logger
-from src.github_utils import initialize_github_client, get_repositories, get_tags_in_period, get_changes_between_tags, \
-    fix_timezone, get_repo_tags
+from src.github_graphql_utils import get_repositories_with_full_data, get_all_repositories_data_in_single_request, get_tags_in_period, get_changes_between_tags, get_repo_tags
 from src.component_utils import get_component_name, load_component_details, determine_component_stage
-from src.template_utils import detect_time_period_from_last_run, save_component_release_note
+from src.keboola_utils import detect_time_period_from_state, update_state_file, save_release_to_table
+from src.config import load_configuration, validate_configuration
 from src.ai_utils import initialize_google_ai_client, generate_ai_description
+from keboola.component import CommonInterface
 
 
 class ReleaseNotesGenerator:
     """Main class for generating release notes."""
 
-    def __init__(self, github_token):
-        """Initialize generator with GitHub token."""
-        # Initialize GitHub client
-        self.github = initialize_github_client(github_token)
-        self.organization = "keboola"  # Organization is set as a constant
-
-        # Detect time period from last run or use default of 30 days
-        self.start_date, self.end_date = detect_time_period_from_last_run(days=60)
+    def __init__(self, github_token: str, ci: CommonInterface):
+        """Initialize generator with GitHub token and Keboola interface."""
+        # Always use the best available method (ultra-optimized GraphQL)
+        from src.github_graphql_utils import initialize_github_client as initialize_graphql_client
+        self.github = initialize_graphql_client(github_token)
+        
+        # Initialize Keboola interface
+        self.ci = ci
+        self.organization = "keboola"
+        
+        # Load configuration
+        self.config = load_configuration(ci)
+        
+        # Initialize Google AI client if available
+        self.google_ai_model = initialize_google_ai_client(self.config.google_ai_api_key)
+        
+        # Detect time period from state file
+        self.start_date, self.end_date = detect_time_period_from_state(ci, days=self.config.days_back)
+        
+        # Ensure dates have timezone information for GraphQL compatibility
+        from src.github_graphql_utils import fix_timezone
+        self.start_date = fix_timezone(self.start_date)
+        self.end_date = fix_timezone(self.end_date)
+        
         logger.info(
             f"Using date range: {self.start_date.strftime('%Y-%m-%d')} to {self.end_date.strftime('%Y-%m-%d')}")
-
-        # Initialize Google AI client - will be None if API key is not available
-        self.google_ai_model = initialize_google_ai_client()
-
+        
         # Initialize tracking for new releases
         self.new_releases = []
 
-    def find_previous_tag(self, repo, tag, all_tags):
-        """
-        Find the previous tag to the given tag.
-        First tries to find semantically similar tag from the same version family,
-        then falls back to chronologically previous tag if semantic match is not found.
-        """
-        tag_date = tag['date']
-        tag_name = tag['name']
+    def get_repositories_optimized(self):
+        """Get repositories using the most optimized method (ultra-optimized single GraphQL request)."""
+        logger.info("Using ultra-optimized single GraphQL request for all repositories")
+        from src.github_graphql_utils import get_all_repositories_data_in_single_request
+        return get_all_repositories_data_in_single_request(self.github, self.organization)
 
-        # Simple default values for fallback
+    @staticmethod
+    def find_previous_tag(repo, tag, all_tags, organization):
+        """
+        Find the previous tag for a given tag.
+        Returns a tag object with name, commit, date, message, and url.
+        """
+        tag_name = tag['name']
+        tag_date = tag['date']
+
+        # Create fallback tag
         fallback = {
             'name': 'initial',
             'commit': tag['commit'],
             'date': tag_date - datetime.timedelta(days=1),
             'message': 'Initial state',
-            'url': tag['url']
+            'url': f"https://github.com/{organization}/{repo.name}/commit/{tag['commit']}"
         }
 
         try:
@@ -84,25 +104,8 @@ class ReleaseNotesGenerator:
                     logger.info(f"Found chronological previous tag: {t['name']} for tag {tag_name}")
                     return t
 
-            # If no previous tag found, try to find the first commit
-            try:
-                commits = list(repo.get_commits(sha=repo.default_branch).reversed)
-                if commits:
-                    initial_commit = commits[0]
-                    logger.info(f"No previous tag found for {tag_name}, using initial commit")
-                    return {
-                        'name': 'initial',
-                        'commit': initial_commit.sha,
-                        'date': fix_timezone(initial_commit.commit.author.date),
-                        'message': initial_commit.commit.message,
-                        'url': initial_commit.html_url
-                    }
-            except Exception as e:
-                logger.warning(f"Error finding initial commit: {e}")
-                # Continue to fallback
-
-            # Return fallback if no tag or commit was found
-            logger.info(f"No previous tag or initial commit found for {tag_name}, using fallback")
+            # If no previous tag found, use fallback
+            logger.info(f"No previous tag found for {tag_name}, using fallback")
             return fallback
 
         except Exception as e:
@@ -117,13 +120,20 @@ class ReleaseNotesGenerator:
         """
         logger.info("Collecting components to process...")
         components_details = load_component_details()
-        repos = get_repositories(self.github, self.organization)
+        repos = self.get_repositories_optimized()
         component_jobs = []
 
         for repo in repos:
-            #if repo.name != "component-zendesk-wr": #repo.name != "python-cdc-component":  # repo.name != "component-zendesk-wr": #repo.name != "component-hubspot-v2": #
-            #    continue
-            component_names = get_component_name(repo)
+            # Use pre-fetched component data if available, otherwise fetch it
+            if hasattr(repo, '_workflow_files'):
+                logger.info(f"Using pre-fetched component data for {repo.name}")
+                # Use the GraphQL version of get_component_name that works with pre-fetched data
+                from src.github_graphql_utils import get_component_name as get_component_name_graphql
+                component_names = get_component_name_graphql(repo, repo._github_client_data)
+            else:
+                logger.info(f"Fetching component data for {repo.name}")
+                component_names = get_component_name(repo)
+            
             logger.info(f"Found component names for {repo.name}: {component_names}")
 
             # Track valid components count for this repo
@@ -169,37 +179,35 @@ class ReleaseNotesGenerator:
         logger.info(f"Starting processing for component {component_name} in repo {repo.name}")
         entries = []
 
-        # Fetch tags here (in parallel) - this is the most time-consuming part
-        tags = get_tags_in_period(repo, self.start_date, self.end_date)
+        # Use pre-fetched tags if available, otherwise fetch them
+        if hasattr(repo, '_tags') and repo._tags:
+            logger.info(f"Using pre-fetched tags for {repo.name}")
+            all_tags = repo._tags
+            # Filter tags by date period
+            tags = []
+            for tag in all_tags:
+                if self.start_date <= tag['date'] <= self.end_date:
+                    tags.append(tag)
+        else:
+            logger.info(f"Fetching tags for {repo.name}")
+            # Fetch tags here (in parallel) - this is the most time-consuming part
+            tags = get_tags_in_period(repo, self.start_date, self.end_date)
+            # Get all tags for this repo (for finding previous tags)
+            all_tags = get_repo_tags(repo)
 
         # Skip if no tags in period
         if not tags:
             logger.info(f"No tags found for {repo.name} in the specified period, skipping component {component_name}")
             return entries
 
-        # Get all tags for this repo (for finding previous tags)
-        all_tags = get_repo_tags(repo)
-
-        # Normalize component name for filename
-        component_name_normalized = component_name.replace('.', '-').replace(' ', '-').lower()
-
-        # Process each tag directly, checking if it's already been processed
+        # Process each tag
         processed_tags_count = 0
         for tag in tags:
-            # Check if we've already processed this release
-            timestamp = tag['date'].strftime('%Y-%m-%d-%H-%M-%S')
-            file_name = f"{timestamp}_{component_stage.lower()}_{tag['name']}_{component_name_normalized}.md"
-            file_path = os.path.join("release_notes", file_name)
-
-            # Skip if file already exists
-            if os.path.exists(file_path):
-                continue
-
             processed_tags_count += 1
 
             try:
                 # Find the previous tag
-                previous_tag = self.find_previous_tag(repo, tag, all_tags)
+                previous_tag = self.find_previous_tag(repo, tag, all_tags, self.organization)
 
                 # Get changes between tags
                 change_data = get_changes_between_tags(repo, previous_tag, tag)
@@ -232,14 +240,14 @@ class ReleaseNotesGenerator:
                     'component_details': component_details,
                     'tag_name': tag['name'],
                     'changes': change_data['changes'],
-                    'tag_url': f"https://github.com/{repo.full_name}/releases/tag/{tag['name']}",
+                    'tag_url': f"https://github.com/{self.organization}/{repo.name}/releases/tag/{tag['name']}",
                     'ai_description': change_data['ai_description'],
                     'previous_tag': previous_tag['name'],
                     'component_stage': component_stage
                 }
 
-                # Save individual release note
-                is_new = save_component_release_note(entry)
+                # Save to table
+                is_new = save_release_to_table(self.ci, entry, self.config.table_name)
 
                 if is_new:
                     entries.append(entry)
@@ -249,37 +257,49 @@ class ReleaseNotesGenerator:
                 logger.error(f"Error processing tag {tag['name']} for component {component_name}: {e}")
 
         if processed_tags_count > 0:
-            logger.info(f"Processed {processed_tags_count} new tags for component {component_name}")
+            logger.info(f"Processed {processed_tags_count} tags for component {component_name}")
         else:
-            logger.info(f"No new tags to process for component {component_name}")
+            logger.info(f"No tags to process for component {component_name}")
 
         return entries
 
-    def generate_timeline(self):
+    def generate_timeline(self) -> List[dict[str, Any]]:
         """Generate a timeline of all changes across repositories using parallel processing."""
-        logger.info("Generating timeline of changes with parallel processing")
+        logger.info("Generating timeline of changes with sequential processing for debugging")
 
         # Step 1: Collect all component jobs (without fetching tags)
         component_jobs = self.collect_component_jobs()
 
-        # Step 2: Process component jobs in parallel (including tag fetching)
-        # Use ThreadPoolExecutor for parallel processing with max 3 workers
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-            # Submit all jobs to the executor
-            future_to_job = {
-                executor.submit(self.process_component_job, job): job
-                for job in component_jobs
-            }
+        # Step 2: Process component jobs sequentially for debugging
+        logger.info(f"Processing {len(component_jobs)} component jobs sequentially")
+        
+        for i, job in enumerate(component_jobs):
+            try:
+                logger.info(f"Processing job {i+1}/{len(component_jobs)}: {job['component_name']}")
+                
+                # Get the entries from this job
+                job_entries = self.process_component_job(job)
 
-            # Process results as they complete
-            for future in concurrent.futures.as_completed(future_to_job):
-                job = future_to_job[future]
-                try:
-                    # Get the entries from this job
-                    job_entries = future.result()
+                # Add to new releases list
+                self.new_releases.extend(job_entries)
 
-                    logger.info(f"Completed processing component {job['component_name']} - "
-                                f"generated {len(job_entries)} entries")
+                logger.info(f"Completed processing component {job['component_name']} - "
+                            f"generated {len(job_entries)} entries")
+                
+                # Force log flush
+                import sys
+                sys.stdout.flush()
 
-                except Exception as e:
-                    logger.error(f"Error processing component {job['component_name']}: {e}")
+            except Exception as e:
+                logger.error(f"Error processing component {job['component_name']}: {e}")
+                # Force log flush
+                import sys
+                sys.stdout.flush()
+
+        # Update state file with latest processed date if we have new releases
+        if self.new_releases:
+            latest_date = max(release['date'] for release in self.new_releases)
+            update_state_file(self.ci, latest_date)
+
+        logger.info(f"Generated {len(self.new_releases)} new release notes")
+        return self.new_releases

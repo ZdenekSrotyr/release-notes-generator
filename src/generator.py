@@ -211,6 +211,7 @@ class ReleaseNotesGenerator:
 
                 # Get changes between tags
                 change_data = get_changes_between_tags(repo, previous_tag, tag)
+                logger.info(f"Got {len(change_data.get('changes', []))} changes between {previous_tag['name']} and {tag['name']} for {repo.name}")
 
                 # Generate AI description if enabled
                 ai_description = None

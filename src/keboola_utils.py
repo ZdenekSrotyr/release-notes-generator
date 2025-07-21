@@ -110,21 +110,27 @@ def save_release_to_table(ci: CommonInterface, release_data: Dict[str, Any], tab
         # Prepare data for table
         table_data = {
             'release_date': release_data['date'].isoformat(),
-            'component_name': release_data['component_name'],
+            'component_id': release_data['component_name'],  # Changed from component_name to component_id
             'component_stage': release_data['component_stage'],
             'tag_name': release_data['tag_name'],
             'previous_tag': release_data['previous_tag'],
             'repo_name': release_data['repo_name'],
             'github_url': release_data['tag_url'],
             'ai_summary': release_data.get('ai_description', 'AI summary not available - AI model was not configured or failed to generate summary'),
-            'changes_count': len(release_data['changes']),
-            'changes_list': json.dumps([change.get('title', '') for change in release_data['changes']]),
+            'changes_count': len(release_data.get('changes', [])),  # Added .get() with default empty list
+            'changes_list': json.dumps([change.get('title', '') for change in release_data.get('changes', [])]),  # Added .get() with default empty list
             'component_type': release_data.get('component_details', {}).get('type', ''),
             'component_description': release_data.get('component_details', {}).get('description', ''),
             'documentation_url': release_data.get('component_details', {}).get('documentationUrl', ''),
             'release_note_content': release_content,
             'generated_at': datetime.datetime.now().isoformat()
         }
+        
+        # Debug logging
+        logger.info(f"Preparing table data for {release_data['component_name']} {release_data['tag_name']}:")
+        logger.info(f"  - changes_count: {table_data['changes_count']}")
+        logger.info(f"  - changes_list: {table_data['changes_list'][:100]}...")  # Show first 100 chars
+        logger.info(f"  - component_id: {table_data['component_id']}")
         
         # Define table columns
         columns = list(table_data.keys())
@@ -133,8 +139,8 @@ def save_release_to_table(ci: CommonInterface, release_data: Dict[str, Any], tab
         out_table = ci.create_out_table_definition(
             f'{table_name}.csv',
             columns=columns,
-            destination=table_name,
-            primary_key=['component_name', 'tag_name'],
+            destination=f'out.c-cf-release-notes.{table_name}',
+            primary_key=['component_id', 'tag_name'],  # Changed from component_name to component_id
             incremental=True
         )
         
@@ -143,15 +149,28 @@ def save_release_to_table(ci: CommonInterface, release_data: Dict[str, Any], tab
         import os
         csv_path = out_table.full_path
         
-        # Check if file exists to determine if we need to write header
+        # Check if file exists and has content to determine if we need to write header
         file_exists = os.path.exists(csv_path)
+        file_has_content = False
+        
+        if file_exists:
+            # Check if file has content (not just header)
+            try:
+                with open(csv_path, 'r', encoding='utf-8') as csvfile:
+                    reader = csv.reader(csvfile)
+                    rows = list(reader)
+                    # If we have more than 1 row (header + at least one data row), file has content
+                    file_has_content = len(rows) > 1
+            except Exception:
+                # If we can't read the file, assume it's empty
+                file_has_content = False
         
         # Append data to CSV file
         with open(csv_path, 'a', newline='', encoding='utf-8') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=columns)
             
-            # Write header only if file doesn't exist
-            if not file_exists:
+            # Write header only if file doesn't exist or is empty
+            if not file_exists or not file_has_content:
                 writer.writeheader()
             
             writer.writerow(table_data)
@@ -159,7 +178,7 @@ def save_release_to_table(ci: CommonInterface, release_data: Dict[str, Any], tab
         # Write manifest
         ci.write_manifest(out_table)
         
-        logger.info(f"Saved release {release_data['component_name']} {release_data['tag_name']} to table with content")
+        logger.info(f"Saved release {release_data['component_name']} {release_data['tag_name']} to table with content (component_id: {release_data['component_name']})")
         return True
         
     except Exception as e:

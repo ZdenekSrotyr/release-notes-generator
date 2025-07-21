@@ -55,6 +55,7 @@ class GraphQLRepoWrapper:
     
     def compare(self, base, head):
         """Compare two commits using GraphQL."""
+        logger.info(f"Comparing commits {base} and {head} for {self.name}")
         try:
             # GraphQL query to get commits between two SHAs
             # We need to get the commit dates first, then use history with timestamps
@@ -159,6 +160,7 @@ class GraphQLRepoWrapper:
                 def __len__(self):
                     return len(self.commits)
             
+            logger.info(f"Found {len(commits)} commits between {base} and {head} for {self.name}")
             return MockComparison(commits)
             
         except Exception as e:

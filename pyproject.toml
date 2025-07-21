@@ -8,9 +8,6 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "PyGithub>=1.55",
-    "PyYAML>=6.0",
-    "Jinja2>=3.0.0",
     "requests>=2.27.0",
     "google-generativeai>=0.3.0",
     "keboola.component>=0.1.0",

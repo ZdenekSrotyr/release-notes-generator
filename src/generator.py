@@ -6,7 +6,7 @@ from typing import Any, List
 import re
 
 from src.config import logger
-from src.github_graphql_utils import get_repositories_with_full_data, get_all_repositories_data_in_single_request, get_tags_in_period, get_changes_between_tags, get_repo_tags
+from src.github_graphql_utils import get_all_repositories_data_in_single_request, get_tags_in_period, get_changes_between_tags, get_repo_tags
 from src.component_utils import get_component_name, load_component_details, determine_component_stage
 from src.keboola_utils import detect_time_period_from_state, update_state_file, save_release_to_table
 from src.config import load_configuration, validate_configuration

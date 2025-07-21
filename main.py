@@ -44,16 +44,7 @@ def main():
         logger.info("Keboola CommonInterface initialized successfully")
         logger.info(f"Data directory: {ci.data_folder_path}")
 
-        # Debug: Check what files exist in data directory
-        logger.info(f"Files in data directory:")
-        for root, dirs, files in os.walk(ci.data_folder_path):
-            for file in files:
-                logger.info(f"  {os.path.join(root, file)}")
 
-        # Debug: Check configuration object
-        logger.info(f"Configuration object: {ci.configuration}")
-        logger.info(
-            f"Configuration parameters: {ci.configuration.parameters if hasattr(ci.configuration, 'parameters') else 'No parameters attribute'}")
 
         # Load and validate configuration
         logger.info("Loading configuration...")

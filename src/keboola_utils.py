@@ -3,7 +3,6 @@
 Keboola-specific utilities for table operations and state management.
 """
 import datetime
-import json
 from typing import Optional, List, Dict, Any
 from keboola.component import CommonInterface
 from src.config import logger
@@ -116,7 +115,7 @@ def save_release_to_table(ci: CommonInterface, release_data: Dict[str, Any], tab
             logger.error(f"Error generating release note content: {content_error}")
             raise
 
-        # Prepare data for table
+                # Prepare data for table
         table_data = {
             'release_date': release_data['date'].isoformat() if hasattr(release_data['date'], 'isoformat') else str(
                 release_data['date']),
@@ -127,11 +126,9 @@ def save_release_to_table(ci: CommonInterface, release_data: Dict[str, Any], tab
             'repo_name': release_data['repo_name'],
             'github_url': release_data['tag_url'],
             'ai_summary': release_data.get('ai_description',
-                                           'AI summary not available - AI model was not configured or failed to generate summary'),
-            'changes_count': len(release_data.get('changes', [])),  # Added .get() with default empty list
-            'changes_list': json.dumps([change.get('title', '') for change in release_data.get('changes', [])],
-                                       ensure_ascii=False, default=str) if release_data.get('changes') else '[]',
-            # Added .get() with default empty list
+                                            'AI summary not available - AI model was not configured or failed to generate summary'),
+            'difference_link': f"https://github.com/{release_data.get('github_organization', 'keboola')}/{release_data['repo_name']}/compare/{release_data['previous_tag']}...{release_data['tag_name']}",
+            'developer_portal_link': f"https://components.keboola.com/applications/{release_data['component_name']}",
             'component_type': release_data.get('component_details', {}).get('type', ''),
             'component_description': release_data.get('component_details', {}).get('description', ''),
             'documentation_url': release_data.get('component_details', {}).get('documentationUrl', ''),
@@ -141,9 +138,9 @@ def save_release_to_table(ci: CommonInterface, release_data: Dict[str, Any], tab
 
         # Debug logging
         logger.info(f"Preparing table data for {release_data['component_name']} {release_data['tag_name']}:")
-        logger.info(f"  - changes_count: {table_data['changes_count']}")
-        logger.info(f"  - changes_list: {table_data['changes_list'][:100]}...")  # Show first 100 chars
         logger.info(f"  - component_id: {table_data['component_id']}")
+        logger.info(f"  - difference_link: {table_data['difference_link']}")
+        logger.info(f"  - developer_portal_link: {table_data['developer_portal_link']}")
 
         # Define table columns
         columns = list(table_data.keys())

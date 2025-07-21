@@ -9,8 +9,7 @@ from pydantic import BaseModel
 GITHUB_ORGANIZATION = "keboola"
 REPO_PATTERNS = "component"
 
-# API Endpoints
-KEBOOLA_STORAGE_API_URL = "https://connection.keboola.com/v2/storage"
+
 
 # Google AI Configuration
 GOOGLE_AI_MODEL = "gemini-2.5-pro-preview-03-25"

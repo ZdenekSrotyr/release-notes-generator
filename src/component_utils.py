@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-import yaml
 import re
 import requests
-from src.config import logger, KEBOOLA_STORAGE_API_URL
+from src.config import logger
 
 
 def get_component_name(repo):
@@ -174,21 +173,14 @@ def find_yml_files_in_directory(repo, directory_path, max_retries=1):
     return yml_files
 
 
-def check_env_section(env_section):
-    """Check env section for component names."""
-    component_names = set()
-    if isinstance(env_section, dict):
-        app_name = env_section.get('KBC_DEVELOPERPORTAL_APP')
-        if app_name:
-            component_names.add(app_name)
-    return component_names
+
 
 
 def load_component_details():
     """Get component details from Keboola Connection Storage API."""
     try:
         # Use the Storage API to get all components
-        api_url = KEBOOLA_STORAGE_API_URL
+        api_url = "https://connection.keboola.com/v2/storage"
 
         # Make API request without authentication
         response = requests.get(api_url)

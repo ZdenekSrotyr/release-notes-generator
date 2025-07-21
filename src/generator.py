@@ -221,17 +221,22 @@ class ReleaseNotesGenerator:
                 # Generate AI description if enabled
                 ai_description = None
                 if self.google_ai_model and change_data['changes']:
-                    ai_description = generate_ai_description(
-                        self.google_ai_model,
-                        repo.name,
-                        previous_tag['name'],
-                        tag['name'],
-                        change_data['changes']
-                    )
-                    # If ai_description failed and returned None, disable the model for future tags
-                    if ai_description is None and self.google_ai_model is not None:
-                        logger.info("AI description generation failed - disabling for subsequent tags")
-                        self.google_ai_model = None
+                    try:
+                        ai_description = generate_ai_description(
+                            self.google_ai_model,
+                            repo.name,
+                            previous_tag['name'],
+                            tag['name'],
+                            change_data['changes']
+                        )
+                        # If ai_description failed and returned None, disable the model for future tags
+                        if ai_description is None and self.google_ai_model is not None:
+                            logger.info("AI description generation failed - disabling for subsequent tags")
+                            self.google_ai_model = None
+                    except Exception as ai_error:
+                        logger.warning(f"AI description generation failed for {component_name} {tag['name']}: {ai_error}")
+                        # Don't disable the model, just continue without AI description
+                        ai_description = None
 
                 # Add the AI description to the change data
                 change_data['ai_description'] = ai_description
@@ -263,7 +268,9 @@ class ReleaseNotesGenerator:
                     logger.info(f"Release note for {component_name} {tag['name']} already exists, skipping")
 
             except Exception as e:
-                logger.error(f"Error processing tag {tag['name']} for component {component_name}: {e}")
+                logger.error(f"Critical error processing tag {tag['name']} for component {component_name}: {e}")
+                # Continue with next tag instead of stopping the entire process
+                continue
 
         if processed_tags_count > 0:
             logger.info(f"Processed {processed_tags_count} tags for component {component_name}")

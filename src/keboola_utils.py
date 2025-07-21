@@ -128,7 +128,7 @@ def save_release_to_table(ci: CommonInterface, release_data: Dict[str, Any], tab
             'ai_summary': release_data.get('ai_description',
                                             'AI summary not available - AI model was not configured or failed to generate summary'),
             'difference_link': f"https://github.com/{release_data.get('github_organization', 'keboola')}/{release_data['repo_name']}/compare/{release_data['previous_tag']}...{release_data['tag_name']}",
-            'developer_portal_link': f"https://components.keboola.com/applications/{release_data['component_name']}",
+            'developer_portal_link': f"https://components.keboola.com/components/{release_data['component_name']}",
             'component_type': release_data.get('component_details', {}).get('type', ''),
             'component_description': release_data.get('component_details', {}).get('description', ''),
             'documentation_url': release_data.get('component_details', {}).get('documentationUrl', ''),

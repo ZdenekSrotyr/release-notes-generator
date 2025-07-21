@@ -159,27 +159,48 @@ def save_release_to_table(ci: CommonInterface, release_data: Dict[str, Any], tab
                 with open(csv_path, 'r', encoding='utf-8') as csvfile:
                     reader = csv.reader(csvfile)
                     rows = list(reader)
-                    # If we have more than 1 row (header + at least one data row), file has content
-                    file_has_content = len(rows) > 1
+                    # If we have at least 1 row (header), file has content
+                    file_has_content = len(rows) >= 1
             except Exception:
                 # If we can't read the file, assume it's empty
                 file_has_content = False
         
-        # Append data to CSV file
-        with open(csv_path, 'a', newline='', encoding='utf-8') as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=columns)
+        # Check for duplicates before writing
+        is_duplicate = False
+        if file_exists and file_has_content:
+            try:
+                with open(csv_path, 'r', encoding='utf-8') as csvfile:
+                    reader = csv.DictReader(csvfile)
+                    for row in reader:
+                        # Check if this exact release already exists
+                        if (row.get('component_id') == table_data['component_id'] and 
+                            row.get('tag_name') == table_data['tag_name']):
+                            logger.info(f"Duplicate found: {table_data['component_id']} {table_data['tag_name']} already exists in table")
+                            is_duplicate = True
+                            break
+            except Exception as e:
+                logger.warning(f"Error checking for duplicates: {e}")
+        
+        # Only write if not a duplicate
+        if not is_duplicate:
+            # Append data to CSV file
+            with open(csv_path, 'a', newline='', encoding='utf-8') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=columns)
+                
+                # Write header only if file doesn't exist or is empty
+                if not file_exists or not file_has_content:
+                    writer.writeheader()
+                
+                writer.writerow(table_data)
             
-            # Write header only if file doesn't exist or is empty
-            if not file_exists or not file_has_content:
-                writer.writeheader()
-            
-            writer.writerow(table_data)
+            logger.info(f"Saved release {release_data['component_name']} {release_data['tag_name']} to table with content (component_id: {release_data['component_name']})")
+            return True
+        else:
+            logger.info(f"Skipped duplicate release {release_data['component_name']} {release_data['tag_name']}")
+            return False
         
         # Write manifest
         ci.write_manifest(out_table)
-        
-        logger.info(f"Saved release {release_data['component_name']} {release_data['tag_name']} to table with content (component_id: {release_data['component_name']})")
-        return True
         
     except Exception as e:
         logger.error(f"Error saving release to table: {e}")

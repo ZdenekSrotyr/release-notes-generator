@@ -163,6 +163,11 @@ class ReleaseNotesGenerator:
                 logger.info(f"No valid components found for repository {repo.name}, skipping")
 
         logger.info(f"Collected {len(component_jobs)} component jobs to process")
+        
+        # Debug: Log all component jobs to see if there are duplicates
+        for i, job in enumerate(component_jobs):
+            logger.info(f"Job {i+1}: {job['component_name']} in repo {job['repo'].name}")
+        
         return component_jobs
 
     def process_component_job(self, job: dict[str, Any]) -> list[dict[str, Any]]:
@@ -248,11 +253,14 @@ class ReleaseNotesGenerator:
                 }
 
                 # Save to table
+                logger.info(f"Attempting to save release for {component_name} {tag['name']} (component_id: {component_name})")
                 is_new = save_release_to_table(self.ci, entry, self.config.table_name)
 
                 if is_new:
                     entries.append(entry)
                     logger.info(f"Created release note for {component_name} {tag['name']}")
+                else:
+                    logger.info(f"Release note for {component_name} {tag['name']} already exists, skipping")
 
             except Exception as e:
                 logger.error(f"Error processing tag {tag['name']} for component {component_name}: {e}")
